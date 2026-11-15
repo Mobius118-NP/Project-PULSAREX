@@ -1,0 +1,9 @@
+# Runtime dependencies; keep these ranges aligned with pyproject.toml.
+numpy>=1.26,<3
+scipy>=1.12,<2
+fastapi>=0.115,<1
+uvicorn[standard]>=0.30,<1
+sounddevice>=0.5,<1
+
+# Install the local application and its pulsar command.
+-e .
