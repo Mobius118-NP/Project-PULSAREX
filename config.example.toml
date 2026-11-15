@@ -1,0 +1,26 @@
+# Copy to config.toml. Tokens belong in PULSAR_TOKEN, never in this file.
+sample_rate = 48000
+fft_size = 4096
+hop_size = 1024
+channels = 1
+source = "simulation"
+# device = 0  # Run pulsar --list-devices to find input IDs.
+min_frequency = 30.0
+max_frequency = 18000.0
+display_bins = 384
+update_hz = 12.0
+reference_hz = 1000.0
+shift_range_hz = 200.0
+zero_tolerance_hz = 2.0
+calibration_seconds = 5.0
+event_threshold_db = 12.0
+event_cooldown_seconds = 3.0
+harmonics_enabled = true
+baseline_adaptation = false
+host = "127.0.0.1"
+port = 8765
+data_dir = "data"
+# Live direction is optional/experimental. Set channels >= 3 and provide the
+# measured planar geometry in metres for one synchronized input device.
+# mic_positions = [[0.0, 0.0], [0.04, 0.0], [0.0, 0.04]]
+

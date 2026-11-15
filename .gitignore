@@ -18,3 +18,5 @@ node_modules/
 Thumbs.db
 Desktop.ini
 *.lnk
+data/
+config.toml
