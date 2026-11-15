@@ -22,7 +22,7 @@ Default mode is **simulation**: a harmonic tone, slow frequency sweep, and perio
 
 ## Live microphone
 
-Choose **Configuration → Live microphone**, select an input and apply. Windows devices are labelled with their backend and native sample rate. Prefer **Windows WASAPI** at the listed native rate. Pause acquisition closes the input stream immediately. Nothing records raw audio.
+Choose **Configuration → Live microphone**, select an input and apply. Windows devices are labelled with their backend and native sample rate. Selecting an input sets its native rate, including the automatic WASAPI input. Pause acquisition stops the input worker; an unresponsive native driver is terminated. Nothing records raw audio.
 
 ```powershell
 & ".\.venv\Scripts\python.exe" -m pulsar.main --list-devices
@@ -40,6 +40,10 @@ If streams fail with MME error 1, DirectSound error or Invalid device:
 - Restart PULSAR after changing audio hardware; cached device IDs can become stale.
 
 The application retries input failures every three seconds and shows an explicit error. It never silently substitutes simulated data for a failed microphone.
+
+During an input error, the **INPUT RECOVERY** panel stays available. Use **Refresh inputs**, **Retry current**, or **Use selected input** to recover without restarting the server. Input discovery and browser requests have separate failure states, so an unavailable input list does not disable the other controls. The driver runs in an isolated process with a six-second startup timeout. Switching devices clears previous array geometry unless you explicitly configure it for the new input.
+
+The interface uses an olive/amber instrument layout with explicit ACQUIRING, HOLD, INPUT FAULT and LINK LOST states. The Doppler/spectrum-shift indicator keeps its continuous blue/violet → green → red convention.
 
 ## Architecture
 

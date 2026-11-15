@@ -1,13 +1,15 @@
 import asyncio
 import csv
-import hashlib
 import hmac
 import io
 import ipaddress
 import secrets
 import socket
+import time
+from collections import OrderedDict, deque
 from contextlib import asynccontextmanager
 from pathlib import Path
+from threading import RLock
 from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
@@ -15,7 +17,8 @@ from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .audio import devices
+from . import __version__
+from .audio import input_inventory
 from .engine import Engine
 
 
@@ -42,8 +45,9 @@ def create_app(config, token=None, autostart=True):
     require_auth = not is_loopback(config.host) or bool(token)
     if require_auth and (not token or len(token) < 16):
         raise ValueError("LAN mode requires PULSAR_TOKEN containing at least 16 characters")
-    cookie_secret = secrets.token_bytes(32)
-    session = hmac.new(cookie_secret, (token or "local").encode(), hashlib.sha256).hexdigest()
+    sessions = OrderedDict()
+    attempts = OrderedDict()
+    auth_lock = RLock()
     engine = Engine(config)
 
     @asynccontextmanager
@@ -57,7 +61,7 @@ def create_app(config, token=None, autostart=True):
 
     app = FastAPI(
         title="PULSAR Mk. II",
-        version="0.1.0",
+        version=__version__,
         lifespan=lifespan,
         docs_url=None,
         redoc_url=None,
@@ -70,19 +74,35 @@ def create_app(config, token=None, autostart=True):
         if not require_auth:
             return True
         bearer = connection.headers.get("authorization", "")
-        return equal_secret(connection.cookies.get("pulsar_session", ""), session) or equal_secret(
-            bearer, f"Bearer {token}"
-        )
+        if equal_secret(bearer, f"Bearer {token}"):
+            return True
+        cookie = connection.cookies.get("pulsar_session", "")
+        with auth_lock:
+            expiry = sessions.get(cookie, 0)
+            if expiry <= time.monotonic():
+                sessions.pop(cookie, None)
+                return False
+            return True
 
     def origin_valid(connection):
         origin = connection.headers.get("origin")
         if not origin:
             return True  # Non-browser clients still require auth in LAN mode.
-        parsed = urlparse(origin)
-        return parsed.scheme in ("http", "https") and parsed.netloc == connection.headers.get("host")
+        try:
+            parsed = urlparse(origin)
+            return (
+                parsed.scheme in ("http", "https")
+                and parsed.hostname is not None
+                and parsed.netloc == connection.headers.get("host")
+            )
+        except ValueError:
+            return False
 
     def host_valid(connection):
-        host = urlparse("//" + connection.headers.get("host", "")).hostname
+        try:
+            host = urlparse("//" + connection.headers.get("host", "")).hostname
+        except ValueError:
+            return False
         if is_loopback(host) or host in {config.host, socket.gethostname().lower()}:
             return True
         if not require_auth:
@@ -113,18 +133,50 @@ def create_app(config, token=None, autostart=True):
 
     @app.get("/api/session")
     def session_status(request: Request):
-        return {"authenticated": authorized(request), "required": require_auth}
+        return {
+            "authenticated": authorized(request),
+            "required": require_auth,
+            "service": "pulsar-mk2",
+            "version": __version__,
+        }
 
     @app.post("/api/login")
-    def login(body: Login):
+    def login(body: Login, request: Request):
+        key = request.client.host if request.client else "unknown"
+        now = time.monotonic()
+        with auth_lock:
+            while len(attempts) >= 256 and key not in attempts:
+                attempts.popitem(last=False)
+            history = attempts.setdefault(key, deque(maxlen=8))
+            while history and now - history[0] > 60:
+                history.popleft()
+            if len(history) >= 8:
+                raise HTTPException(429, "Too many login attempts; retry in one minute")
         if require_auth and not equal_secret(body.token, token):
+            with auth_lock:
+                history.append(now)
             raise HTTPException(401, "Incorrect access token")
+        session = secrets.token_urlsafe(32)
+        with auth_lock:
+            attempts.pop(key, None)
+            sessions[session] = now + 28800
+            while len(sessions) > 128:
+                sessions.popitem(last=False)
         response = JSONResponse({"authenticated": True})
-        response.set_cookie("pulsar_session", session, httponly=True, samesite="strict", max_age=28800)
+        response.set_cookie(
+            "pulsar_session",
+            session,
+            httponly=True,
+            samesite="strict",
+            max_age=28800,
+            secure=request.url.scheme == "https",
+        )
         return response
 
     @app.post("/api/logout")
-    def logout():
+    def logout(request: Request):
+        with auth_lock:
+            sessions.pop(request.cookies.get("pulsar_session", ""), None)
         response = JSONResponse({"authenticated": False})
         response.delete_cookie("pulsar_session")
         return response
@@ -146,9 +198,9 @@ def create_app(config, token=None, autostart=True):
     @app.get("/api/devices")
     async def get_devices():
         try:
-            return {"devices": await asyncio.to_thread(devices), "error": None}
+            return await asyncio.to_thread(input_inventory)
         except RuntimeError as exc:
-            return {"devices": [], "error": str(exc)}
+            return {"devices": [], "default_input": None, "error": str(exc)}
 
     @app.get("/api/measurements")
     def measurements():
@@ -174,7 +226,7 @@ def create_app(config, token=None, autostart=True):
 
     @app.get("/api/events")
     def events(limit: int = Query(100, ge=1, le=5000), category: str | None = None):
-        return {"events": engine.store.recent(limit, category)}
+        return {"events": engine.store.recent(limit, category), "total": engine.store.count()}
 
     @app.get("/api/events/export")
     def export_events():
@@ -214,6 +266,9 @@ def create_app(config, token=None, autostart=True):
         engine.clients += 1
         try:
             while True:
+                if not authorized(websocket):
+                    await websocket.close(code=1008)
+                    break
                 await asyncio.wait_for(websocket.send_json(engine.snapshot()), timeout=2)
                 await asyncio.sleep(1 / engine.config.update_hz)
         except (TimeoutError, WebSocketDisconnect, RuntimeError):

@@ -34,7 +34,7 @@ class Config:
         for key in integers:
             if type(getattr(self, key)) is not int:
                 raise ValueError(f"{key} must be an integer")
-        if self.sample_rate not in (16000, 22050, 44100, 48000, 96000):
+        if self.sample_rate not in (8000, 16000, 22050, 44100, 48000, 96000):
             raise ValueError("Unsupported sample rate")
         if self.fft_size < 512 or self.fft_size > 32768 or self.fft_size & (self.fft_size - 1):
             raise ValueError("fft_size must be a power of two between 512 and 32768")
@@ -43,6 +43,8 @@ class Config:
         if self.source not in ("simulation", "microphone"):
             raise ValueError("source must be simulation or microphone")
         bounds = {
+            "min_frequency": (10, self.sample_rate / 2 - 1),
+            "max_frequency": (11, self.sample_rate / 2),
             "update_hz": (1, 30),
             "display_bins": (64, 1024),
             "reference_hz": (20, self.sample_rate / 2 - 1),
@@ -66,9 +68,15 @@ class Config:
             raise ValueError("Invalid port")
         if self.device is not None and (type(self.device) is not int or self.device < 0):
             raise ValueError("device must be a nonnegative input ID")
+        if not isinstance(self.host, str) or not self.host.strip() or any(c.isspace() for c in self.host):
+            raise ValueError("host must be an IP address or hostname")
+        if not isinstance(self.data_dir, str) or not self.data_dir.strip():
+            raise ValueError("data_dir must be a nonempty path")
         for key in ("harmonics_enabled", "baseline_adaptation"):
             if type(getattr(self, key)) is not bool:
                 raise ValueError(f"{key} must be boolean")
+        if not isinstance(self.mic_positions, list):
+            raise ValueError("mic_positions must be a list of [x, y] positions")
         if self.mic_positions:
             import numpy as np
 
@@ -77,6 +85,7 @@ class Config:
                 geometry.shape != (self.channels, 2)
                 or self.channels < 3
                 or not np.isfinite(geometry).all()
+                or len(np.unique(geometry, axis=0)) != self.channels
                 or np.linalg.matrix_rank(geometry - geometry.mean(axis=0)) < 2
             ):
                 raise ValueError("Direction requires >=3 non-collinear, synchronized planar microphones")

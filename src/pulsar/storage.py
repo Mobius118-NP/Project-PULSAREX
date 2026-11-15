@@ -36,6 +36,10 @@ class EventStore:
         events = [{**json.loads(payload), "id": event_id} for event_id, payload in rows]
         return [event for event in events if category is None or event["category"] == category][:limit]
 
+    def count(self):
+        with self.lock:
+            return self.connection.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+
     def close(self):
         with self.lock:
             self.connection.close()
@@ -53,6 +57,8 @@ class EventDetector:
         import numpy as np
 
         if not ready:
+            self.previous_peak = None
+            self.onset = None
             return None
         absolute = np.abs(np.asarray(deviation))
         changed = absolute >= self.threshold
@@ -73,7 +79,7 @@ class EventDetector:
         self.last_event = now
         category = (
             "broadband transient"
-            if fraction > 0.35 and frame["flux"] > 0.2
+            if float((np.asarray(deviation) >= self.threshold).mean()) > 0.35 and frame["flux"] > 0.2
             else ("tonal change" if tonal_change else "spectral change")
         )
         frequencies = np.asarray(frame["frequencies"])

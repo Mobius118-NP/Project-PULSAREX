@@ -8,7 +8,7 @@ def shift_color(shift, limit=200.0, tolerance=2.0):
     """Continuous signed ramp with a continuous neutral plateau."""
     if shift is None or not math.isfinite(shift):
         return "#697585"
-    if not 0 <= tolerance < limit:
+    if not math.isfinite(limit) or not math.isfinite(tolerance) or not 0 <= tolerance < limit:
         raise ValueError("Expected 0 <= tolerance < limit")
     value = min(1.0, max(0.0, (abs(shift) - tolerance) / (limit - tolerance)))
     stops = (
@@ -24,7 +24,7 @@ def shift_color(shift, limit=200.0, tolerance=2.0):
 
 def harmonic_groups(peaks, resolution):
     groups = []
-    for peak in peaks[:16]:
+    for peak in sorted(peaks, key=lambda p: p["hz"])[:24]:
         fundamental = peak["hz"]
         if any(
             abs(fundamental / g["fundamental_hz"] - round(fundamental / g["fundamental_hz"]))
@@ -32,14 +32,17 @@ def harmonic_groups(peaks, resolution):
             for g in groups
         ):
             continue
-        members = []
+        by_order = {}
         for other in peaks:
             ratio = other["hz"] / fundamental
             order = round(ratio)
             if 1 <= order <= 12 and abs(other["hz"] - order * fundamental) < max(
                 2 * resolution, fundamental * 0.025
             ):
-                members.append({"order": order, **other})
+                error = abs(other["hz"] - order * fundamental)
+                if order not in by_order or error < abs(by_order[order]["hz"] - order * fundamental):
+                    by_order[order] = {"order": order, **other}
+        members = [by_order[order] for order in sorted(by_order)]
         if len(members) >= 2:
             groups.append(
                 {
@@ -80,7 +83,8 @@ class Analyzer:
         amplitude = np.abs(np.fft.rfft((x - x.mean()) * self.window)) * 2 / self.window.sum()
         amplitude[[0, -1]] *= 0.5
         db = 20 * np.log10(np.maximum(amplitude, 1e-7))
-        noise = float(np.percentile(db[1:], 35))
+        band = (self.freq >= cfg.min_frequency) & (self.freq <= cfg.max_frequency)
+        noise = float(np.percentile(db[band], 35))
         indices, _ = find_peaks(db, height=max(noise + 15, -85), prominence=7, distance=2)
         indices = [i for i in indices if cfg.min_frequency <= self.freq[i] <= cfg.max_frequency]
         indices = sorted(indices, key=lambda i: db[i], reverse=True)[:24]
@@ -108,14 +112,13 @@ class Analyzer:
                 for old in self.previous_fundamentals
             )
         self.previous_fundamentals = [g["fundamental_hz"] for g in groups]
-        candidates = [p for p in peaks if abs(p["hz"] - cfg.reference_hz) <= cfg.shift_range_hz]
-        candidate = max(candidates, key=lambda p: p["dbfs"], default=None)
-        ambiguous = (
-            len(candidates) > 1
-            and sorted((p["dbfs"] for p in candidates), reverse=True)[0]
-            - sorted((p["dbfs"] for p in candidates), reverse=True)[1]
-            < 6
+        candidates = sorted(
+            (p for p in peaks if abs(p["hz"] - cfg.reference_hz) <= cfg.shift_range_hz),
+            key=lambda p: p["dbfs"],
+            reverse=True,
         )
+        candidate = candidates[0] if candidates else None
+        ambiguous = len(candidates) > 1 and candidates[0]["dbfs"] - candidates[1]["dbfs"] < 6
         reliable = bool(candidate and candidate["snr_db"] >= 20 and rms > 1e-5 and not ambiguous)
         shift = candidate["hz"] - cfg.reference_hz if candidate else None
         return {
@@ -125,6 +128,7 @@ class Analyzer:
             "centroid_hz": round(centroid, 2),
             "flux": round(flux, 4),
             "noise_floor_dbfs": round(noise, 2),
+            "resolution_hz": round(cfg.sample_rate / cfg.fft_size, 3),
             "peaks": peaks,
             "harmonics": groups,
             "shift": {
@@ -152,6 +156,20 @@ def estimate_bearing(samples, sample_rate, positions):
     if len(geometry) < 3:
         return {"available": False, "reason": "Calibrated synchronized array required"}
     x = np.asarray(samples, dtype=float)
+    if (
+        x.ndim != 2
+        or x.shape[1] != len(geometry)
+        or geometry.shape != (x.shape[1], 2)
+        or len(x) < 32
+        or not np.isfinite(x).all()
+        or not np.isfinite(geometry).all()
+        or np.linalg.matrix_rank(geometry - geometry.mean(axis=0)) < 2
+    ):
+        return {"available": False, "reason": "Invalid or degenerate synchronized array input"}
+    power = np.abs(np.fft.rfft((x[:, 0] - x[:, 0].mean()) * np.hanning(len(x)))) ** 2
+    flatness = float(np.exp(np.mean(np.log(np.maximum(power[1:], 1e-20)))) / max(power[1:].mean(), 1e-20))
+    if np.max(np.abs(x)) < 1e-6 or flatness < 0.005:
+        return {"available": False, "reason": "Silent or narrowband input: bearing is ambiguous"}
     n = 2 ** int(np.ceil(np.log2(len(x) * 2)))
     delays, clarity = [], []
     reference = np.fft.rfft((x[:, 0] - x[:, 0].mean()) * np.hanning(len(x)), n)
@@ -177,6 +195,7 @@ def estimate_bearing(samples, sample_rate, positions):
     norm = float(np.linalg.norm(direction))
     residual = float(np.linalg.norm(vectors @ direction + 343 * np.array(delays)))
     confidence = min(1.0, min(clarity) * 2) * max(0, 1 - abs(1 - norm))
+    confidence *= max(0, 1 - residual / max(0.005, float(np.linalg.norm(vectors, axis=1).max()) * 0.2))
     if confidence < 0.1 or norm < 0.1:
         return {
             "available": False,
@@ -185,7 +204,7 @@ def estimate_bearing(samples, sample_rate, positions):
         }
     return {
         "available": True,
-        "bearing_deg": round(math.degrees(math.atan2(direction[0], direction[1])) % 360, 1),
+        "bearing_deg": round(math.degrees(math.atan2(direction[0], direction[1])), 1) % 360,
         "confidence": round(confidence, 3),
         "residual_m": residual,
         "experimental": True,

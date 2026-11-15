@@ -1,8 +1,9 @@
 'use strict';
 const $ = id => document.getElementById(id);
-const state = {config:null, frame:null, socket:null, sequence:-1, spectra:[], events:[], reconnect:null, connected:false, view:'monitor'};
-const palette = {grid:'#1a2a34', text:'#67818f', green:'#5ee3aa', amber:'#d5b879'};
+const state = {config:null, frame:null, socket:null, sequence:-1, streamId:null, configRevision:-1, spectra:[], spectraTimes:[], events:[], archiveEvents:[], archiveLimit:200, archiveNewest:null, reconnect:null, connected:false, linkLost:false, lastReceived:0, view:'monitor'};
+const palette = {grid:'#29392c', text:'#9aaa8b', green:'#c1d98d', amber:'#d5b879'};
 const number = (value, decimals=0) => Number.isFinite(value) ? value.toLocaleString(undefined, {maximumFractionDigits:decimals, minimumFractionDigits:decimals}) : '—';
+let inputInventory=null,recoveryLoading=false,recoveryVisible=false;
 let toastTimer;
 function toast(message, error=false) {
   const node = $('toast'); node.textContent = message; node.classList.remove('hidden');
@@ -10,13 +11,32 @@ function toast(message, error=false) {
   toastTimer = setTimeout(() => node.classList.add('hidden'), 5000);
 }
 async function api(path, method='GET', body) {
-  const response = await fetch('/api/' + path, {method, headers:body === undefined ? {} : {'Content-Type':'application/json'}, body:body === undefined ? undefined : JSON.stringify(body)});
-  const result = await response.json();
-  if (!response.ok) {
-    if (response.status === 401 && !$('login-dialog').open) $('login-dialog').showModal();
-    throw new Error(typeof result.detail === 'string' ? result.detail : 'Request failed. Check your input.');
-  }
-  return result;
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10000);
+  try{
+    const response = await fetch('/api/' + path, {method, signal:controller.signal, headers:body === undefined ? {} : {'Content-Type':'application/json'}, body:body === undefined ? undefined : JSON.stringify(body)});
+    const result = await response.json();
+    if (!response.ok) {
+      if (response.status === 401 && !$('login-dialog').open) $('login-dialog').showModal();
+      throw new Error(typeof result.detail === 'string' ? result.detail : 'Request failed. Check your input.');
+    }
+    return result;
+  }catch(error){if(error.name==='AbortError')throw new Error('Station request timed out. Retry or select another input.');throw error;}
+  finally{clearTimeout(timer);}
+}
+function deviceOptions(select,inventory,value){
+  const automatic=inventory.default_input,option=new Option(automatic?`Automatic: ${automatic.name} / ${automatic.backend} / ${automatic.default_sample_rate} Hz`:'Automatic input','');
+  if(automatic){option.dataset.rate=automatic.default_sample_rate;option.dataset.channels=automatic.channels;}
+  select.replaceChildren(option);
+  for(const d of inventory.devices){const item=new Option(`${d.name} / ${d.backend} / ${d.default_sample_rate} Hz`,String(d.id));item.dataset.rate=d.default_sample_rate;item.dataset.channels=d.channels;select.append(item);}
+  select.value=value==null?'':String(value);
+  if(select.selectedIndex<0)select.selectedIndex=0;
+}
+async function refreshRecovery(){
+  if(recoveryLoading)return;
+  recoveryLoading=true;$('recovery-note').textContent='Enumerating available inputs…';
+  try{inputInventory=await api('devices');deviceOptions($('recovery-device'),inputInventory,state.config?.device);$('recovery-note').textContent=inputInventory.error || `${inputInventory.devices.length} inputs available. Switching uses the selected input’s native rate.`;}
+  catch(error){$('recovery-note').textContent=error.message;}
+  finally{recoveryLoading=false;}
 }
 function applyConfig(config) {
   state.config = config;
@@ -31,20 +51,36 @@ function applyConfig(config) {
 }
 async function configure(changes) {
   const config = await api('config','PATCH',changes); applyConfig(config);
-  state.spectra.length = 0; state.sequence = -1; state.frame = null;
-  toast('Configuration applied. Analysis pipeline restarted.');
+  toast('Configuration applied.');
+}
+function clearReadouts() {
+  for (const id of ['rms','dominant','centroid','latency']) $(id).textContent='—';
+  $('peak-detail').textContent='NO CURRENT SAMPLES';
+  $('noise-detail').textContent='NO CURRENT NOISE ESTIMATE';
+  $('spectrogram-detail').textContent=`${state.spectra.length} FRAMES / 180 MAX`;
+  $('spectrogram-span').textContent=state.spectraTimes.length?`${number((state.spectraTimes.at(-1)-state.spectraTimes[0])/1000,1)} s HISTORY`:'0.0 s HISTORY';
+  $('shift-value').textContent='—';$('shift-value').style.color='#81917d';
+  $('shift-status').textContent='NO CURRENT ESTIMATE';$('shift-marker').classList.add('hidden');
+  $('observed-detail').textContent='OBSERVED — Hz';
+  $('bearing-overlay').classList.remove('hidden');$('bearing-mode').textContent='UNAVAILABLE';
+  for (const id of ['bearing-value','bearing-confidence','bearing-uncertainty']) $(id).textContent='—';
+  $('bearing-note').textContent='No current acquisition data';
+  $('harmonics').textContent='Awaiting current spectral measurements.';
 }
 function connect() {
   if (state.socket) { state.socket.onclose = null; state.socket.close(); }
   const socket = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`);
   state.socket = socket;
-  socket.onopen = () => { state.connected=true; $('connection-light').classList.remove('offline'); $('connection-label').textContent='CONNECTED'; };
+  socket.onopen = () => { state.connected=true;state.linkLost=false; $('connection-light').classList.remove('offline'); $('connection-label').textContent='CONNECTED'; };
   socket.onmessage = event => {
+    if(state.socket!==socket)return;
+    state.lastReceived=Date.now();state.linkLost=false;
     try { render(JSON.parse(event.data)); } catch (error) { console.error('Measurement render failed',error); }
   };
   socket.onerror = () => { $('connection-label').textContent='RECONNECTING'; };
   socket.onclose = () => {
-    state.connected=false; $('connection-light').classList.add('offline'); $('connection-label').textContent='DISCONNECTED';
+    state.connected=false;state.linkLost=true; $('connection-light').classList.add('offline'); $('connection-label').textContent='DISCONNECTED';
+    if(state.frame)render({...state.frame,measurement_valid:false});
     clearTimeout(state.reconnect); state.reconnect=setTimeout(async () => {
       try { const session=await api('session'); if (session.authenticated) connect(); else if (!$('login-dialog').open) $('login-dialog').showModal(); }
       catch { connect(); }
@@ -52,18 +88,40 @@ function connect() {
   };
 }
 function render(frame) {
+  if (frame.config && frame.config_revision!==state.configRevision) {
+    applyConfig(frame.config);state.configRevision=frame.config_revision;
+  }
+  if (frame.stream_id && frame.stream_id!==state.streamId) {
+    state.streamId=frame.stream_id;state.sequence=-1;state.spectra.length=0;state.spectraTimes.length=0;
+  }
   const status=frame.status || {}, simulation=status.source === 'simulation';
-  const paused=!status.running, error=status.error;
+  const paused=!status.running, error=state.linkLost?'Connection lost. Awaiting current station telemetry.':status.error;
+  const valid=!state.linkLost && (frame.measurement_valid ?? (!paused && !error && !!frame.spectrum_dbfs));
+  frame={...frame,measurement_valid:valid};state.frame=frame;
+  const station=state.linkLost?'LINK LOST':error?'INPUT FAULT':paused?'HOLD':valid?'ACQUIRING':'AWAITING INPUT';
+  $('station-state').textContent=station;$('station-input').textContent=status.input?.name || (simulation?'SYNTHETIC GENERATOR':'MICROPHONE');
+  $('sample-age').textContent=state.linkLost?'UNKNOWN':frame.sample_age_seconds==null?'—':number(frame.sample_age_seconds,2)+' s';
+  document.querySelector('.station-strip').classList.toggle('fault',!!error);
+  document.querySelector('.metrics').classList.toggle('stale',!valid);
+  $('source-badge').classList.toggle('live',!simulation);
   $('source-badge').textContent=simulation?'SIMULATION':'LIVE MICROPHONE';
   $('demo-notice').classList.toggle('hidden',!simulation);
+  $('demo-label').textContent=state.linkLost?'Simulation link lost':error?'Simulation unavailable':paused?'Simulation paused':valid?'Synthetic signal active':'Simulation preparing';
   $('capture-button').textContent=paused?'Start acquisition':'Pause acquisition';
-  $('calibrate-button').disabled=paused || !!error;
-  $('error-banner').classList.toggle('hidden',!error); $('error-banner').textContent=error || '';
+  $('capture-button').disabled=state.linkLost;
+  $('settings-button').disabled=state.linkLost;
+  $('calibrate-button').disabled=paused || !!error || !valid;
+  const notice=error || (status.warnings || []).join(' ');
+  $('error-banner').classList.toggle('hidden',!notice); $('error-banner').textContent=notice || '';
+  const showRecovery=!simulation && !!status.error;
+  $('input-recovery').classList.toggle('hidden',!showRecovery);
+  if(showRecovery && !recoveryVisible)refreshRecovery();
+  recoveryVisible=showRecovery;
   $('system-source').textContent=simulation?'SIMULATION':'MICROPHONE';
   $('sample-rate').textContent=number(status.sample_rate)+' Hz'; $('channels').textContent=status.channels;
-  $('mic-state').textContent=status.microphone_active?'CAPTURING':simulation?'INACTIVE':error?'UNAVAILABLE':paused?'STOPPED':'CONNECTING';
+  $('mic-state').textContent=state.linkLost?'UNKNOWN':status.microphone_active?'CAPTURING':simulation?'INACTIVE':error?'UNAVAILABLE':paused?'STOPPED':'CONNECTING';
   $('clients').textContent=status.clients; $('buffer-detail').textContent=`${status.overruns || 0} BUFFER OVERRUNS · ${paused?'PAUSED':'BOUNDED QUEUE'}`;
-  $('health').textContent=error?'ERROR':paused?'PAUSED':'NOMINAL';
+  $('health').textContent=station;
   $('fft-detail').textContent=`HANN WINDOW · ${number(status.fft_size)} SAMPLES · HOP ${number(status.hop_size)}`;
   const baseline=frame.baseline || {};
   $('baseline-status').textContent=baseline.calibrating?'CALIBRATING':baseline.ready?'CALIBRATED':'UNCALIBRATED';
@@ -71,26 +129,27 @@ function render(frame) {
   $('baseline-description').textContent=baseline.calibrating?`${Math.round(baseline.progress*100)}% complete. Keep the environment representative and quiet.`:baseline.ready?'Changes are compared against the calibrated spectral profile. Quiet frames adapt only when enabled.':'Calibrate a quiet interval to detect spectral changes against your environment.';
   $('calibration-progress').style.width=(baseline.progress || 0)*100+'%';
   $('calibrate-button').textContent=baseline.calibrating?'↻ Recalibrate baseline':'↻ Calibrate baseline';
-  if (!frame.spectrum_dbfs) { state.frame=frame; drawAll(); return; }
+  if (!frame.spectrum_dbfs || !valid) { clearReadouts();drawAll();return; }
   state.frame=frame;
   if (frame.sequence !== state.sequence) {
     state.sequence=frame.sequence;
     state.spectra.push(frame.spectrum_dbfs); if (state.spectra.length>180) state.spectra.shift();
+    state.spectraTimes.push(Date.parse(frame.timestamp));if(state.spectraTimes.length>180)state.spectraTimes.shift();
   }
   $('rms').textContent=number(frame.rms_dbfs,1); $('dominant').textContent=number(frame.peaks?.[0]?.hz,1);
   $('peak-detail').textContent=frame.peaks?.length?`${frame.peaks.length} PEAKS · ${number(frame.peaks[0].snr_db,1)} dB ABOVE FLOOR`:'No reliable spectral peaks';
   $('centroid').textContent=number(frame.centroid_hz); $('latency').textContent=number(frame.processing_ms,1);
   $('noise-detail').textContent=`NOISE FLOOR ${number(frame.noise_floor_dbfs,1)} dBFS`;
   $('spectrogram-detail').textContent=`${state.spectra.length} FRAMES / 180 MAX`;
-  $('spectrogram-span').textContent=`~${number(state.spectra.length / (state.config?.update_hz || 12),1)} s HISTORY`;
+  $('spectrogram-span').textContent=`${number((state.spectraTimes.at(-1)-state.spectraTimes[0])/1000,1)} s HISTORY`;
   $('frame-number').textContent=`FRAME ${String(frame.sequence).padStart(6,'0')}`;
-  const shift=frame.shift, valid=shift?.reliable;
-  $('shift-value').textContent=valid?(shift.hz>=0?'+':'−')+number(Math.abs(shift.hz),1):'—';
-  $('shift-value').style.color=shift.color; $('shift-status').textContent=valid?'VALID ESTIMATE':shift.status.toUpperCase();
+  const shift=frame.shift, shiftValid=shift?.reliable;
+  $('shift-value').textContent=shiftValid?(shift.hz>=0?'+':'−')+number(Math.abs(shift.hz),1):'—';
+  $('shift-value').style.color=shift.color; $('shift-status').textContent=shiftValid?'VALID ESTIMATE':shift.status.toUpperCase();
   $('shift-description').textContent=simulation?'Controlled synthetic frequency shift':'Spectrum shift · motion unconfirmed';
   $('observed-detail').textContent=`OBSERVED ${number(shift.observed_hz,1)} Hz`;
-  $('shift-marker').classList.toggle('hidden',!valid);
-  if (valid) $('shift-marker').style.left=(50+Math.max(-1,Math.min(1,shift.hz/(state.config?.shift_range_hz || 200)))*50)+'%';
+  $('shift-marker').classList.toggle('hidden',!shiftValid);
+  if (shiftValid) $('shift-marker').style.left=(50+Math.max(-1,Math.min(1,shift.hz/(state.config?.shift_range_hz || 200)))*50)+'%';
   const direction=frame.direction || {};
   $('bearing-overlay').classList.toggle('hidden',!!direction.available);
   $('bearing-mode').textContent=direction.simulated?'SIMULATED':direction.available?'EXPERIMENTAL':'UNAVAILABLE';
@@ -133,7 +192,7 @@ function spectrum() {
     if (f<cfg.min_frequency || f>cfg.max_frequency) continue;
     const x=xFor(f);ctx.strokeStyle=palette.grid;ctx.beginPath();ctx.moveTo(x,a.y);ctx.lineTo(x,a.y+a.h);ctx.stroke();ctx.fillText(f>=1000?(f/1000)+'k':String(f),x,h-10);
   }
-  if (!frame?.spectrum_dbfs) { ctx.textAlign='center';ctx.fillText('WAITING FOR ACQUISITION',w/2,h/2);return; }
+  if (!frame?.spectrum_dbfs || frame.measurement_valid===false) { ctx.textAlign='center';ctx.fillText('NO CURRENT ACQUISITION DATA',w/2,h/2);return; }
   const frequencies=frame.frequencies,values=frame.spectrum_dbfs;
   const yFor=db=>a.y+Math.max(0,Math.min(1,-db/100))*a.h;
   ctx.save();ctx.beginPath();ctx.rect(a.x,a.y,a.w,a.h);ctx.clip();
@@ -141,27 +200,28 @@ function spectrum() {
     ctx.strokeStyle=palette.amber;ctx.lineWidth=1;ctx.setLineDash([3,4]);ctx.beginPath();
     frame.baseline.mean_dbfs.forEach((v,i)=>{const x=xFor(frequencies[i]),y=yFor(v);i?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.stroke();ctx.setLineDash([]);
   }
-  const gradient=ctx.createLinearGradient(0,a.y,0,a.y+a.h);gradient.addColorStop(0,'#5ee3aa45');gradient.addColorStop(1,'#5ee3aa00');
+  const gradient=ctx.createLinearGradient(0,a.y,0,a.y+a.h);gradient.addColorStop(0,'#c1d98d38');gradient.addColorStop(1,'#c1d98d00');
   ctx.beginPath();ctx.moveTo(xFor(frequencies[0]),a.y+a.h);values.forEach((v,i)=>ctx.lineTo(xFor(frequencies[i]),yFor(v)));ctx.lineTo(xFor(frequencies.at(-1)),a.y+a.h);ctx.closePath();ctx.fillStyle=gradient;ctx.fill();
   ctx.beginPath();values.forEach((v,i)=>{const x=xFor(frequencies[i]),y=yFor(v);i?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.strokeStyle=palette.green;ctx.lineWidth=1.4;ctx.stroke();
   ctx.fillStyle=palette.green;
   for (const peak of frame.peaks.slice(0,4)) { const x=xFor(peak.hz),y=yFor(peak.dbfs);ctx.beginPath();ctx.arc(x,y,2.5,0,Math.PI*2);ctx.fill();ctx.textAlign='center';ctx.fillText(number(peak.hz)+' Hz',x,Math.max(a.y+10,y-10)); }
   ctx.restore();
 }
-const heatStops=[[12,23,35],[17,49,73],[21,105,128],[47,177,147],[229,210,122],[249,239,202]];
+const heatStops=[[9,18,12],[30,54,34],[63,98,60],[142,172,99],[224,204,122],[249,239,202]];
 function heat(value) {
   const v=Math.max(0,Math.min(.99999,(value+100)/90))*(heatStops.length-1),i=Math.floor(v),t=v-i;
   return heatStops[i].map((c,j)=>Math.round(c+(heatStops[i+1][j]-c)*t));
 }
 const heatCanvas=document.createElement('canvas');
+const heatLut=new Uint8Array(Array.from({length:256},(_,i)=>heat(-100+i/255*90)).flat());
 function spectrogram() {
   const chartData=chart('spectrogram'); if (!chartData) return;
   const {ctx,w,h}=chartData,left=42,bottom=25,rows=180,bins=state.config?.display_bins || 384;
-  heatCanvas.width=bins;heatCanvas.height=rows;
+  if(heatCanvas.width!==bins)heatCanvas.width=bins;if(heatCanvas.height!==rows)heatCanvas.height=rows;
   const hc=heatCanvas.getContext('2d'),data=hc.createImageData(bins,rows);
   for(let y=0;y<rows;y++) for(let x=0;x<bins;x++) {
-    const sourceRow=state.spectra[y-(rows-state.spectra.length)],rgb=sourceRow?heat(sourceRow[x]):heat(-140),offset=(y*bins+x)*4;
-    data.data[offset]=rgb[0];data.data[offset+1]=rgb[1];data.data[offset+2]=rgb[2];data.data[offset+3]=255;
+    const sourceRow=state.spectra[y-(rows-state.spectra.length)],value=sourceRow?sourceRow[x]:-140,level=Math.max(0,Math.min(255,Math.round((value+100)/90*255))),offset=(y*bins+x)*4;
+    data.data[offset]=heatLut[level*3];data.data[offset+1]=heatLut[level*3+1];data.data[offset+2]=heatLut[level*3+2];data.data[offset+3]=255;
   }
   hc.putImageData(data,0,0);ctx.imageSmoothingEnabled=false;ctx.drawImage(heatCanvas,left,0,w-left-14,h-bottom);
   ctx.fillStyle=palette.text;ctx.textAlign='right';ctx.fillText('PAST',left-8,12);ctx.fillText('NOW',left-8,h-bottom-4);
@@ -175,7 +235,7 @@ function polar() {
   for(const fraction of [.25,.5,.75,1]){ctx.beginPath();ctx.arc(x,y,r*fraction,0,Math.PI*2);ctx.stroke();}
   for(let angle=0;angle<360;angle+=30){const a=(angle-90)*Math.PI/180;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+Math.cos(a)*r,y+Math.sin(a)*r);ctx.stroke();}
   ctx.fillStyle=palette.text;ctx.textAlign='center';ctx.fillText('000° N',x,y-r-12);ctx.fillText('180°',x,y+r+16);ctx.fillText('270°',x-r-13,y+3);ctx.fillText('090°',x+r+13,y+3);
-  const direction=state.frame?.direction;if(!direction?.available)return;
+  const direction=state.frame?.direction;if(!direction?.available || state.frame.measurement_valid===false)return;
   const a=(direction.bearing_deg-90)*Math.PI/180,u=(direction.uncertainty_deg || 12)*Math.PI/180;
   ctx.beginPath();ctx.moveTo(x,y);ctx.arc(x,y,r,a-u,a+u);ctx.closePath();ctx.fillStyle='#5ee3aa18';ctx.fill();
   ctx.strokeStyle='#5ee3aa70';ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+Math.cos(a)*r,y+Math.sin(a)*r);ctx.stroke();
@@ -206,20 +266,29 @@ function eventRows(events,node,archive=false) {
 async function refreshEvents() {
   if(!state.config)return;
   try{
-    const result=await api('events?limit=5000');state.events=result.events;$('event-count').textContent=state.events.length;
-    eventRows(state.events.slice(0,5),$('recent-events'));$('events-empty').classList.toggle('hidden',!!state.events.length);renderArchive();
+    const result=await api('events?limit=5');state.events=result.events;$('event-count').textContent=result.total ?? state.events.length;
+    eventRows(state.events,$('recent-events'));$('events-empty').classList.toggle('hidden',!!state.events.length);
+    if(state.view==='events' && state.archiveNewest!==state.events[0]?.id)await refreshArchive();
   }catch(error){console.warn('Event update',error.message);}
 }
-function renderArchive(){const filter=$('event-filter').value,events=state.events.filter(e=>!filter || e.category===filter);eventRows(events,$('archive-events'),true);$('archive-empty').classList.toggle('hidden',!!events.length);}
-function view(name){state.view=name;$('monitor-view').classList.toggle('hidden',name!=='monitor');$('archive-view').classList.toggle('hidden',name!=='events');document.querySelectorAll('[data-view]').forEach(button=>button.classList.toggle('active',button.dataset.view===name));drawAll();}
+async function refreshArchive(){
+  const filter=$('event-filter').value;
+  const selected=await api(`events?limit=${state.archiveLimit}${filter?'&category='+encodeURIComponent(filter):''}`);
+  state.archiveEvents=selected.events;state.archiveNewest=state.events[0]?.id;
+  eventRows(state.archiveEvents,$('archive-events'),true);$('archive-empty').classList.toggle('hidden',!!state.archiveEvents.length);
+  $('archive-shown').textContent=`${state.archiveEvents.length} OBSERVATIONS SHOWN / ${selected.total ?? '—'} STORED`;
+  $('archive-more').classList.toggle('hidden',state.archiveEvents.length<state.archiveLimit || state.archiveLimit>=5000);
+}
+function view(name){state.view=name;$('monitor-view').classList.toggle('hidden',name!=='monitor');$('archive-view').classList.toggle('hidden',name!=='events');document.querySelectorAll('[data-view]').forEach(button=>button.classList.toggle('active',button.dataset.view===name));if(name==='events')refreshArchive().catch(error=>toast(error.message,true));drawAll();}
 async function openSettings(){
   const c=state.config;if(!c)return;
   $('setting-source').value=c.source;$('setting-rate').value=c.sample_rate;$('setting-fft').value=c.fft_size;$('setting-tolerance').value=c.zero_tolerance_hz;$('setting-calibration').value=c.calibration_seconds;$('setting-harmonics').checked=c.harmonics_enabled;
+  $('setting-channels').value=c.channels;$('setting-hop').value=c.hop_size;$('setting-hop').max=c.fft_size;$('setting-geometry').value=JSON.stringify(c.mic_positions || []);
   $('settings-dialog').showModal();$('device-note').textContent='Checking input devices…';
-  try{const result=await api('devices'),select=$('setting-device');select.replaceChildren(new Option('System default input',''));for(const d of result.devices)select.append(new Option(`${d.name} · ${d.backend || 'audio'} · ${d.default_sample_rate} Hz`,String(d.id)));select.value=c.device ?? '';$('device-note').textContent=result.error || `${result.devices.length} inputs found. On Windows, prefer WASAPI at its listed native rate. Current channels: ${c.channels}.`;}
+  try{inputInventory=await api('devices');deviceOptions($('setting-device'),inputInventory,c.device);$('device-note').textContent=inputInventory.error || `${inputInventory.devices.length} inputs found. Selecting an input sets its native sample rate. Requested channels: ${c.channels}.`;}
   catch(error){$('device-note').textContent=error.message;}
 }
-function bind(id,event,fn){$(id).addEventListener(event,async e=>{try{await fn(e);}catch(error){toast(error.message,true);}});}
+function bind(id,event,fn){$(id).addEventListener(event,async e=>{const button=e.currentTarget.tagName==='BUTTON'?e.currentTarget:e.submitter;if(button)button.disabled=true;try{await fn(e);}catch(error){toast(error.message,true);}finally{if(button)button.disabled=false;}});}
 document.querySelectorAll('[data-view]').forEach(button=>button.addEventListener('click',()=>view(button.dataset.view)));
 bind('capture-button','click',async()=>{const action=state.frame?.status.running?'stop':'start';await api('capture/'+action,'POST');render(await api('measurements'));toast(action==='stop'?'Acquisition paused. Microphone stream closed.':'Acquisition started.');});
 bind('calibrate-button','click',async()=>{await api('baseline/calibrate','POST');toast('Baseline calibration started. Keep the environment quiet.');});
@@ -229,12 +298,28 @@ $('threshold').addEventListener('input',()=>{$('threshold-label').textContent=$(
 bind('threshold','change',async()=>{try{await configure({event_threshold_db:Number($('threshold').value)});}catch(error){applyConfig(state.config);throw error;}});
 bind('adapt-baseline','change',async()=>{try{await configure({baseline_adaptation:$('adapt-baseline').checked});}catch(error){applyConfig(state.config);throw error;}});
 bind('settings-button','click',openSettings);bind('close-settings','click',()=>$('settings-dialog').close());bind('cancel-settings','click',()=>$('settings-dialog').close());
-bind('settings-form','submit',async e=>{e.preventDefault();const rate=Number($('setting-rate').value);await configure({source:$('setting-source').value,device:$('setting-device').value===''?null:Number($('setting-device').value),sample_rate:rate,fft_size:Number($('setting-fft').value),zero_tolerance_hz:Number($('setting-tolerance').value),calibration_seconds:Number($('setting-calibration').value),harmonics_enabled:$('setting-harmonics').checked});$('settings-dialog').close();});
-bind('show-archive','click',()=>view('events'));bind('event-filter','change',renderArchive);
+bind('settings-form','submit',async e=>{e.preventDefault();let geometry;try{geometry=JSON.parse($('setting-geometry').value);}catch{throw new Error('Array geometry must be valid JSON, for example [[0,0],[0.04,0],[0,0.04]], or [].');}await configure({source:$('setting-source').value,device:$('setting-device').value===''?null:Number($('setting-device').value),sample_rate:Number($('setting-rate').value),fft_size:Number($('setting-fft').value),channels:Number($('setting-channels').value),hop_size:Number($('setting-hop').value),mic_positions:geometry,zero_tolerance_hz:Number($('setting-tolerance').value),calibration_seconds:Number($('setting-calibration').value),harmonics_enabled:$('setting-harmonics').checked});$('settings-dialog').close();});
+bind('setting-device','change',()=>{const option=$('setting-device').selectedOptions[0];if(option?.dataset.rate)$('setting-rate').value=option.dataset.rate;if(option?.dataset.channels){$('setting-channels').max=option.dataset.channels;$('setting-channels').value=Math.min(Number($('setting-channels').value),Number(option.dataset.channels));}$('setting-geometry').value='[]';});
+bind('setting-source','change',()=>{if($('setting-source').value==='microphone'){const option=$('setting-device').selectedOptions[0];if(option?.dataset.rate)$('setting-rate').value=option.dataset.rate;}});
+bind('setting-fft','change',()=>{const max=Number($('setting-fft').value);$('setting-hop').max=max;if(Number($('setting-hop').value)>max)$('setting-hop').value=max;});
+bind('show-archive','click',()=>view('events'));bind('event-filter','change',async()=>{state.archiveLimit=200;await refreshArchive();});
+bind('archive-more','click',async()=>{state.archiveLimit=Math.min(5000,state.archiveLimit+200);await refreshArchive();});
+bind('recovery-refresh','click',refreshRecovery);
+bind('recovery-retry','click',async()=>{await api('capture/stop','POST');await api('capture/start','POST');toast('Input retry requested. Recovery controls remain available.');});
+bind('recovery-apply','click',async()=>{
+  const selected=$('recovery-device').selectedOptions[0];
+  if(!selected)throw new Error('Refresh inputs and select a microphone.');
+  const device=selected.value===''?null:Number(selected.value),channels=Math.min(state.config.channels,Number(selected.dataset.channels) || state.config.channels);
+  const changes={source:'microphone',device,sample_rate:Number(selected.dataset.rate) || state.config.sample_rate,channels};
+  if(device!==state.config.device || channels!==state.config.channels)changes.mic_positions=[];
+  await configure(changes);await api('capture/stop','POST');await api('capture/start','POST');
+  toast('Selected input applied. Waiting for live samples.');
+});
 $('login-dialog').addEventListener('cancel',e=>e.preventDefault());
 bind('login-form','submit',async e=>{e.preventDefault();try{await api('login','POST',{token:$('access-token').value});$('access-token').value='';$('login-error').textContent='';$('login-dialog').close();await initialize();}catch(error){$('login-error').textContent=error.message;}});
 window.addEventListener('resize',drawAll);
 setInterval(()=>{$('clock').textContent=new Date().toLocaleTimeString('en-GB')+' LOCAL';},1000);
 setInterval(refreshEvents,2000);
+setInterval(()=>{if(state.connected && state.lastReceived && Date.now()-state.lastReceived>5000)state.socket?.close();},1000);
 async function initialize(){try{const session=await api('session');if(!session.authenticated){$('login-dialog').showModal();return;}applyConfig(await api('config'));render(await api('measurements'));await refreshEvents();connect();}catch(error){$('error-banner').textContent='Cannot connect to PULSAR: '+error.message;$('error-banner').classList.remove('hidden');}}
 initialize();
