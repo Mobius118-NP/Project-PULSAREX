@@ -1,4 +1,6 @@
-# PULSAR Mk. II
+# Project PULSAREX
+
+**PULSAR Mk. II — passive acoustic analysis and environmental monitoring.**
 
 LAN-based acoustic spectral mapping and environmental change detection.
 
