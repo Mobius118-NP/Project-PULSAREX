@@ -1,0 +1,18 @@
+PULSAREX 0.4.0 - GUI LAUNCHER
+
+1. Extract the entire Windows ZIP. Keep _internal beside the executables.
+2. Double-click PULSAREX.exe.
+3. Select LAN (same Wi-Fi).
+4. Keep the generated token, or use Generate. The token is not saved to disk.
+5. Choose Synthetic demonstration or Live microphone, then click Start server.
+6. Click Copy LAN link and open it on the other device on the same Wi-Fi.
+7. Click Copy token and enter that token in the dashboard login.
+
+Open dashboard opens the dashboard on this computer.
+Stop server, or closing the launcher, stops its server and microphone capture.
+Local only keeps access on this computer.
+
+Port 8765 is the default. If it is in use, select a different port.
+Use a trusted private LAN. The launcher does not change firewall/router settings.
+Detailed instructions: docs/gui-launcher.md
+Advanced console operation: PULSAREX-Console.exe

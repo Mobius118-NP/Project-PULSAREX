@@ -1,6 +1,6 @@
 # Windows executable
 
-Build on Windows x64 with Python 3.11+ (validated here on 3.12):
+Build on Windows x64 with a full Python 3.11+ installation including Tcl/Tk (validated here on 3.12):
 
 ```powershell
 & .\.venv\Scripts\python.exe -m pip install -e ".[packaging,discovery]"
@@ -12,8 +12,7 @@ Build on Windows x64 with Python 3.11+ (validated here on 3.12):
 `dist/PULSAREX` folder, including `_internal`, as a ZIP. `PULSAREX.exe` hosts HTTP;
 it is not an HTML launcher requiring a separately installed Python. A one-folder
 distribution was selected for inspectable DLL dependencies and to avoid repeated
-one-file extraction of NumPy/SciPy and PortAudio. The console displays startup/errors
-and supports Ctrl+C. Use `--open-browser` to open the dashboard when ready.
+one-file extraction of NumPy/SciPy and PortAudio. Double-click `PULSAREX.exe` to open the native GUI. `PULSAREX-Console.exe` displays console startup/errors and supports Ctrl+C. Both share the bundled dependencies. See [GUI launch steps](gui-launcher.md).
 
 ```powershell
 .\PULSAREX.exe --open-browser
@@ -24,7 +23,7 @@ and supports Ctrl+C. Use `--open-browser` to open the dashboard when ready.
 Without external configuration, packaged data default to `%LOCALAPPDATA%\PULSAREX`.
 `--data-dir` overrides that location. Relative data paths in external TOML resolve
 against the configuration file, not a bundle extraction directory. Dashboard assets
-are read-only package data. Credentials belong only in environment variables.
+are read-only package data. LAN tokens stay in GUI memory; console mode uses the PULSAR_TOKEN environment variable. The GUI never writes the token to preferences.
 
 The entry calls `multiprocessing.freeze_support()` before loading the application,
 so spawned microphone-driver workers dispatch correctly rather than starting another
@@ -46,3 +45,5 @@ an independent Windows build/smoke job, but that hosted workflow has not run her
 
 References: [PyInstaller runtime paths](https://pyinstaller.org/en/stable/runtime-information.html),
 [multiprocessing support](https://pyinstaller.org/en/stable/common-issues-and-pitfalls.html#multi-processing).
+
+A packaged GUI-backend check is available as `PULSAREX.exe --check-launcher <output.json>`. It verifies bundled Tcl, frozen server-process spawning, authenticated LAN access and graceful shutdown/port release, without physical audio capture. The result file contains no token.

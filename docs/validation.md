@@ -1,5 +1,23 @@
 # Validation
 
+## PULSAREX 0.4.0 GUI launcher - 17 November 2026
+
+Full suite: **108 passed**, one upstream Starlette/httpx deprecation warning,
+34.30 seconds in an isolated full Windows Python environment with working Tcl/Tk.
+Six new process-level tests verify Local/LAN settings, authentication enforcement,
+no token persistence, occupied-port refusal, graceful shutdown/port release, startup
+cancellation and restart. Python/Ruff checks passed. Native window layout was
+visually inspected; the form includes scrolling for smaller displays. The interface
+is separate from the server process and closes its server on exit.
+
+The prior development runtime has Tcl DLLs but lacks compatible Tcl script assets;
+the isolated `.venv-gui` uses the installed full Windows Python. Packaged artifacts
+bundle their own Tcl/Tk and require no Python installation. Frozen process checks,
+source/bundle comparisons and delivery evidence are recorded in
+`release-evidence-0.4.0.json` after the final package validation. Cross-device LAN
+reachability and clean-machine installation remain separate hardware/network checks.
+
+
 ## PULSAREX 0.3.1 two-microphone update - 17 November 2026
 
 Full suite: **102 passed**, one upstream Starlette/httpx deprecation warning,

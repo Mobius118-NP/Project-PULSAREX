@@ -1,4 +1,4 @@
-# Implementation status — 0.3.1
+# Implementation status — 0.4.0
 
 | Capability | Status and boundary |
 |---|---|
@@ -27,3 +27,5 @@ No raw audio recording/streaming is implemented. All capture is visible and stop
 Use only where participants have consented and you are authorized to monitor sound.
 Digital values are not calibrated sound-pressure level. There is no military target
 identification, physical source tracking or acoustic-to-person attribution.
+
+The 0.4.0 native GUI adds Local/LAN startup, generated masked tokens, port/source/TOML controls, open/copy dashboard links, responsive status and managed Stop/close. See [GUI details](gui-launcher.md). Console operation remains available.

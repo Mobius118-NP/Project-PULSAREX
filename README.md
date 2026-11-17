@@ -6,7 +6,7 @@ LAN-based acoustic spectral mapping and environmental change detection.
 
 The application includes a responsive local dashboard, microphone and synthetic acquisition, FFT/STFT spectrum and spectrogram, harmonic candidates, baseline calibration, processed-event history/CSV export, and experimental shift and array-direction displays.
 
-**PULSAREX 0.3.1** adds robust median/MAD background learning, optional clipped EWMA
+**PULSAREX 0.4.0** adds robust median/MAD background learning, optional clipped EWMA
 adaptation, detection on full FFT bins, multiple environmental profiles, event
 lifecycle/review, compact signature memory, versioned APIs, optional ARGOS/FOV and
 stereo-delay adapters, discovery and a Windows executable build. Existing capture,
@@ -18,7 +18,18 @@ See the [feature matrix and limitations](docs/features.md),
 
 ## Start on Windows
 
-Run `Install-PULSAR.cmd` once, then double-click `Start-PULSAR.cmd`. Python 3.11+ is required. Open **http://127.0.0.1:8765** and keep the terminal open. Ctrl+C stops the server.
+**Packaged application:** extract the complete ZIP and double-click **PULSAREX.exe**.
+The native GUI opens without a terminal. Choose **LAN (same Wi-Fi)**, keep or generate
+an access token, then click **Start server**. Use **Copy LAN link** on another device
+and **Copy token** for its login. Choose **Local only** to keep access on this computer.
+**Stop server** or closing the launcher stops capture and the server.
+
+The GUI includes source/port selection, optional TOML configuration, masked token,
+browser opening and adapter-aware links. Preferences persist; the token is never
+saved. See [GUI launcher instructions](docs/gui-launcher.md).
+
+
+For a source checkout, run `Install-PULSAR.cmd` once, then double-click `Start-PULSAR.cmd` to open the GUI. A full Python 3.11+ installation with Tcl/Tk is required. The following commands retain console operation; Ctrl+C stops that console server.
 
 From PowerShell in this folder:
 
@@ -28,7 +39,7 @@ py -3 -m venv .venv
 & ".\.venv\Scripts\python.exe" -m pulsar.main
 ```
 
-For a fresh clone, first run `git clone <your-repository-url> pulsar-mk2` and `cd pulsar-mk2`. This local repository has no remote configured yet.
+For a fresh clone, first run `git clone <your-repository-url> pulsar-mk2` and `cd pulsar-mk2`. Use the repository URL for your checkout.
 
 Default mode is **simulation**: a harmonic tone, slow frequency sweep, and periodic broadband event. It generates data without playing sound or using the microphone. Simulated bearing data are explicitly labelled and independent of the synthetic signal.
 
@@ -161,7 +172,7 @@ and Windows and builds/smoke-tests the Windows package when run on GitHub.
 ## Standalone Windows application
 
 Build with `Build-PULSAREX.cmd`, then distribute the entire `dist/PULSAREX` folder.
-Run `PULSAREX.exe --open-browser` and open `http://127.0.0.1:8765`.
+Double-click `PULSAREX.exe`, choose Local or LAN, then Start. `PULSAREX-Console.exe` retains command-line operation.
 The executable serves HTTP itself and does not need an installed Python interpreter.
 Packaged data default to `%LOCALAPPDATA%\PULSAREX`; `--data-dir` or external TOML
 overrides it. Source launches retain the `data/` default. Browser changes are runtime
@@ -197,6 +208,6 @@ examples/                   Experiments, benchmark and frozen-server smoke test
 packaging/                  Multiprocessing-safe executable entry point
 ```
 
-MIT licensed. No remote repository is configured; no GitHub publication was attempted.
+MIT licensed. No GitHub publication is required for local operation.
 
 Digital levels are dBFS, not calibrated SPL. No physical-object classification, source identity, distance estimation or motion confirmation is implemented. The spectrogram holds at most 180 frames; shift and bearing histories are bounded. The `data/` folder stores event/baseline statistics and is ignored by Git. Use microphones where you are authorized to capture sound.

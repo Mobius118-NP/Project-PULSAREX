@@ -8,5 +8,7 @@ analysis = Analysis(['packaging/launcher.py'], pathex=['src'], datas=assets,
                     excludes=['pytest', 'httpx', 'ruff'], noarchive=False)
 archive = PYZ(analysis.pure)
 exe = EXE(archive, analysis.scripts, [], exclude_binaries=True,
-          name='PULSAREX', debug=False, strip=False, upx=False, console=True)
-collection = COLLECT(exe, analysis.binaries, analysis.datas, strip=False, upx=False, name='PULSAREX')
+          name='PULSAREX', debug=False, strip=False, upx=False, console=False)
+console_exe = EXE(archive, analysis.scripts, [], exclude_binaries=True,
+                  name='PULSAREX-Console', debug=False, strip=False, upx=False, console=True)
+collection = COLLECT(exe, console_exe, analysis.binaries, analysis.datas, strip=False, upx=False, name='PULSAREX')

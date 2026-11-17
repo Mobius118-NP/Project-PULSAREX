@@ -1,15 +1,10 @@
 @echo off
 cd /d "%~dp0"
-if not exist ".venv\Scripts\python.exe" (
+set "PULSAREX_RUNTIME=.venv\Scripts\pythonw.exe"
+if exist ".venv-gui\Scripts\pythonw.exe" set "PULSAREX_RUNTIME=.venv-gui\Scripts\pythonw.exe"
+if not exist "%PULSAREX_RUNTIME%" (
   echo Run Install-PULSAR.cmd first.
   pause
   exit /b 1
 )
-echo PULSAR dashboard: http://127.0.0.1:8765
-echo Keep this window open. Press Ctrl+C to stop the server.
-if exist "config.toml" (
-  ".venv\Scripts\python.exe" -m pulsar.main --config config.toml --open-browser
-) else (
-  ".venv\Scripts\python.exe" -m pulsar.main --open-browser
-)
-pause
+start "" "%PULSAREX_RUNTIME%" -m pulsar.launcher

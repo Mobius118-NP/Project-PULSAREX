@@ -24,6 +24,13 @@ jobs:
       - run: python -m pip install -e ".[packaging,discovery]"
       - run: python -m PyInstaller --noconfirm PULSAREX.spec
       - run: python examples/smoke_executable.py dist/PULSAREX/PULSAREX.exe package-smoke
+      - name: Verify frozen launcher backend
+        shell: pwsh
+        run: |
+          $launcherCheck = Start-Process -FilePath dist/PULSAREX/PULSAREX.exe -ArgumentList '--check-launcher', 'package-launcher-check.json' -WindowStyle Hidden -Wait -PassThru
+          if ($launcherCheck.ExitCode -ne 0) { throw 'Packaged launcher check failed' }
+          $launcherResult = Get-Content package-launcher-check.json | ConvertFrom-Json
+          if (-not $launcherResult.passed) { throw 'Packaged launcher check did not pass' }
       - uses: actions/upload-artifact@v4
         with:
           name: PULSAREX-Windows
