@@ -17,10 +17,27 @@ event_threshold_db = 12.0
 event_cooldown_seconds = 3.0
 harmonics_enabled = true
 baseline_adaptation = false
+# Initialization learns representative background; no noise cancellation is applied.
+auto_calibrate = true
+adaptation_seconds = 300.0
+sensitivity = 4.0
+band_edges = [250.0, 4000.0]
+sensor_id = "local-acoustic-01"
+characterization_enabled = false
+argos_enabled = false
+# Requires optional [discovery] dependency and an authenticated LAN binding.
+mdns_enabled = false
+# Only enable after verifying two distinct channels from one shared-clock device.
+stereo_synchronized = false
+stereo_spacing_m = 0.1
+# Clockwise from diagram north, from microphone channel 0 toward channel 1.
+stereo_axis_deg = 90.0
 host = "127.0.0.1"
 port = 8765
 data_dir = "data"
-# Live direction is optional/experimental. Set channels >= 3 and provide the
-# measured planar geometry in metres for one synchronized input device.
+# Two-mic example: channels=2, stereo_synchronized=true, measured spacing/axis above.
+# Optional geometry overrides two-mic spacing/axis; order must match input channels.
+# mic_positions = [[0.0, 0.0], [0.1, 0.0]]
+# For >=3 microphones provide measured non-collinear planar geometry.
 # mic_positions = [[0.0, 0.0], [0.04, 0.0], [0.0, 0.04]]
 

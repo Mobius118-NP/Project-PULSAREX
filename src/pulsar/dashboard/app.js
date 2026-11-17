@@ -129,6 +129,7 @@ function render(frame) {
   $('baseline-description').textContent=baseline.calibrating?`${Math.round(baseline.progress*100)}% complete. Keep the environment representative and quiet.`:baseline.ready?'Changes are compared against the calibrated spectral profile. Quiet frames adapt only when enabled.':'Calibrate a quiet interval to detect spectral changes against your environment.';
   $('calibration-progress').style.width=(baseline.progress || 0)*100+'%';
   $('calibrate-button').textContent=baseline.calibrating?'↻ Recalibrate baseline':'↻ Calibrate baseline';
+  window.renderResearch?.(frame);
   if (!frame.spectrum_dbfs || !valid) { clearReadouts();drawAll();return; }
   state.frame=frame;
   if (frame.sequence !== state.sequence) {
@@ -152,11 +153,14 @@ function render(frame) {
   if (shiftValid) $('shift-marker').style.left=(50+Math.max(-1,Math.min(1,shift.hz/(state.config?.shift_range_hz || 200)))*50)+'%';
   const direction=frame.direction || {};
   $('bearing-overlay').classList.toggle('hidden',!!direction.available);
-  $('bearing-mode').textContent=direction.simulated?'SIMULATED':direction.available?'EXPERIMENTAL':'UNAVAILABLE';
-  $('bearing-value').replaceChildren(document.createTextNode(direction.available?number(direction.bearing_deg,1):'—'),unit('°'));
+  const paired=direction.mode==='two_microphone', bearings=direction.possible_bearings_deg || [direction.bearing_deg];
+  $('bearing-mode').textContent=direction.simulated?(paired?'SIMULATED / TWO MIC':'SIMULATED'):direction.available?(paired?'TWO MIC / AMBIGUOUS':'EXPERIMENTAL'):'UNAVAILABLE';
+  $('bearing-value').classList.toggle('paired',paired);
+  $('bearing-caption').textContent=paired?'POSSIBLE BEARINGS':'BEARING';
+  $('bearing-value').replaceChildren(document.createTextNode(direction.available?bearings.map(v=>number(v,1)).join(' / '):'—'),unit('°'));
   $('bearing-confidence').replaceChildren(document.createTextNode(direction.available?number(direction.confidence*100):'—'),unit('%'));
   $('bearing-uncertainty').replaceChildren(document.createTextNode(direction.available?'±'+number(direction.uncertainty_deg):'—'),unit('°'));
-  $('bearing-note').textContent=direction.simulated?'Synthetic bearing · demonstration only':direction.available?'Experimental far-field array estimate':direction.reason || 'Synchronized calibrated array required';
+  $('bearing-note').textContent=!direction.available?(direction.reason || 'Synchronized calibrated input required'):paired?`${direction.simulated?'Simulated · ':''}Front/back unresolved${Number.isFinite(direction.delay_seconds)?' · delay '+number(direction.delay_seconds*1e6,1)+' µs':''} · horizontal-plane assumption`:direction.simulated?'Synthetic bearing · demonstration only':'Experimental far-field array estimate';
   const harmonics=$('harmonics'); harmonics.replaceChildren();
   if (!frame.harmonics?.length) { const p=document.createElement('p'); p.textContent='No confident harmonic grouping. Signals may be nonharmonic or ambiguous.'; harmonics.append(p); }
   for (const group of frame.harmonics || []) {
@@ -196,6 +200,10 @@ function spectrum() {
   const frequencies=frame.frequencies,values=frame.spectrum_dbfs;
   const yFor=db=>a.y+Math.max(0,Math.min(1,-db/100))*a.h;
   ctx.save();ctx.beginPath();ctx.rect(a.x,a.y,a.w,a.h);ctx.clip();
+  if(frame.deviation_db) {
+    ctx.fillStyle='#d5b87935';
+    frame.deviation_db.forEach((v,i)=>{if(Math.abs(v)>=(state.config?.event_threshold_db || 12))ctx.fillRect(xFor(frequencies[i]),a.y,Math.max(2,a.w/values.length),a.h);});
+  }
   if (frame.baseline?.mean_dbfs) {
     ctx.strokeStyle=palette.amber;ctx.lineWidth=1;ctx.setLineDash([3,4]);ctx.beginPath();
     frame.baseline.mean_dbfs.forEach((v,i)=>{const x=xFor(frequencies[i]),y=yFor(v);i?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.stroke();ctx.setLineDash([]);
@@ -235,13 +243,22 @@ function polar() {
   for(const fraction of [.25,.5,.75,1]){ctx.beginPath();ctx.arc(x,y,r*fraction,0,Math.PI*2);ctx.stroke();}
   for(let angle=0;angle<360;angle+=30){const a=(angle-90)*Math.PI/180;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+Math.cos(a)*r,y+Math.sin(a)*r);ctx.stroke();}
   ctx.fillStyle=palette.text;ctx.textAlign='center';ctx.fillText('000° N',x,y-r-12);ctx.fillText('180°',x,y+r+16);ctx.fillText('270°',x-r-13,y+3);ctx.fillText('090°',x+r+13,y+3);
+  for(const visual of state.frame?.integrations?.visual_observations || []) {
+    const center=(visual.fov_center_deg-90)*Math.PI/180, half=visual.fov_width_deg*Math.PI/360;
+    ctx.fillStyle='#ad8be327';ctx.strokeStyle='#ad8be3';ctx.setLineDash([3,4]);ctx.beginPath();ctx.moveTo(x,y);ctx.arc(x,y,r,center-half,center+half);ctx.closePath();ctx.fill();ctx.stroke();ctx.setLineDash([]);
+  }
   const direction=state.frame?.direction;if(!direction?.available || state.frame.measurement_valid===false)return;
-  const a=(direction.bearing_deg-90)*Math.PI/180,u=(direction.uncertainty_deg || 12)*Math.PI/180;
-  ctx.beginPath();ctx.moveTo(x,y);ctx.arc(x,y,r,a-u,a+u);ctx.closePath();ctx.fillStyle='#5ee3aa18';ctx.fill();
-  ctx.strokeStyle='#5ee3aa70';ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+Math.cos(a)*r,y+Math.sin(a)*r);ctx.stroke();
+  const bearings=direction.possible_bearings_deg || [direction.bearing_deg];
+  const drawBearing=(bearing,uncertainty,color)=>{
+    const a=(bearing-90)*Math.PI/180,u=uncertainty*Math.PI/180;
+    ctx.beginPath();ctx.moveTo(x,y);ctx.arc(x,y,r,a-u,a+u);ctx.closePath();ctx.fillStyle=color+'22';ctx.fill();
+    ctx.strokeStyle=color;ctx.setLineDash(bearings.length>1?[4,4]:[]);ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+Math.cos(a)*r,y+Math.sin(a)*r);ctx.stroke();ctx.setLineDash([]);
+    ctx.fillStyle=color;ctx.beginPath();ctx.arc(x+Math.cos(a)*r*.85,y+Math.sin(a)*r*.85,4,0,Math.PI*2);ctx.fill();
+  };
   const history=state.frame?.bearing_history || [];
-  history.slice(-35).forEach((point,i)=>{const p=(point.bearing_deg-90)*Math.PI/180;ctx.fillStyle=`rgba(94,227,170,${.08+i/50})`;ctx.beginPath();ctx.arc(x+Math.cos(p)*r*.72,y+Math.sin(p)*r*.72,1.8,0,Math.PI*2);ctx.fill();});
-  ctx.fillStyle=palette.green;ctx.shadowColor=palette.green;ctx.shadowBlur=12;ctx.beginPath();ctx.arc(x+Math.cos(a)*r*.72,y+Math.sin(a)*r*.72,4,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+  history.slice(-35).forEach((point,i)=>{for(const bearing of point.possible_bearings_deg || [point.bearing_deg]){if(!Number.isFinite(bearing))continue;const a=(bearing-90)*Math.PI/180;ctx.fillStyle=`rgba(94,227,170,${.08+i/50})`;ctx.beginPath();ctx.arc(x+Math.cos(a)*r*.85,y+Math.sin(a)*r*.85,1.8,0,Math.PI*2);ctx.fill();}});
+  bearings.forEach((bearing,i)=>drawBearing(bearing,direction.uncertainty_deg ?? 12,i===0?'#5ee3aa':'#d5b879'));
+
 }
 function shiftHistory() {
   const chartData=chart('shift-history'); if(!chartData)return;
@@ -259,7 +276,7 @@ function eventRows(events,node,archive=false) {
     const row=document.createElement('tr'),date=new Date(event.timestamp);
     const cells=[archive?date.toLocaleString():date.toLocaleTimeString(),event.category,event.band_hz.length?event.band_hz.map(v=>number(v)).join('–')+' Hz':'—','+'+number(event.change_db,1)+' dB'];
     if(archive)cells.push(number(event.duration_seconds,2)+' s');cells.push(number(event.score*100)+'%');if(archive)cells.push(event.source);
-    cells.forEach((value,i)=>{const cell=document.createElement('td');cell.textContent=value;if(i===3)cell.className='change';row.append(cell);});
+    cells.forEach((value,i)=>{const cell=document.createElement('td');cell.textContent=value;if(i===3)cell.className='change';if(i===1){const button=document.createElement('button');button.className='text-button';button.textContent=value;button.onclick=()=>window.reviewEvent?.(event.id);cell.replaceChildren(button);}row.append(cell);});
     node.append(row);
   }
 }
@@ -283,7 +300,7 @@ function view(name){state.view=name;$('monitor-view').classList.toggle('hidden',
 async function openSettings(){
   const c=state.config;if(!c)return;
   $('setting-source').value=c.source;$('setting-rate').value=c.sample_rate;$('setting-fft').value=c.fft_size;$('setting-tolerance').value=c.zero_tolerance_hz;$('setting-calibration').value=c.calibration_seconds;$('setting-harmonics').checked=c.harmonics_enabled;
-  $('setting-channels').value=c.channels;$('setting-hop').value=c.hop_size;$('setting-hop').max=c.fft_size;$('setting-geometry').value=JSON.stringify(c.mic_positions || []);
+  $('setting-stereo-sync').checked=c.stereo_synchronized;$('setting-stereo-spacing').value=c.stereo_spacing_m;$('setting-stereo-axis').value=c.stereo_axis_deg;$('setting-channels').value=c.channels;$('setting-hop').value=c.hop_size;$('setting-hop').max=c.fft_size;$('setting-geometry').value=JSON.stringify(c.mic_positions || []);
   $('settings-dialog').showModal();$('device-note').textContent='Checking input devices…';
   try{inputInventory=await api('devices');deviceOptions($('setting-device'),inputInventory,c.device);$('device-note').textContent=inputInventory.error || `${inputInventory.devices.length} inputs found. Selecting an input sets its native sample rate. Requested channels: ${c.channels}.`;}
   catch(error){$('device-note').textContent=error.message;}
@@ -298,8 +315,8 @@ $('threshold').addEventListener('input',()=>{$('threshold-label').textContent=$(
 bind('threshold','change',async()=>{try{await configure({event_threshold_db:Number($('threshold').value)});}catch(error){applyConfig(state.config);throw error;}});
 bind('adapt-baseline','change',async()=>{try{await configure({baseline_adaptation:$('adapt-baseline').checked});}catch(error){applyConfig(state.config);throw error;}});
 bind('settings-button','click',openSettings);bind('close-settings','click',()=>$('settings-dialog').close());bind('cancel-settings','click',()=>$('settings-dialog').close());
-bind('settings-form','submit',async e=>{e.preventDefault();let geometry;try{geometry=JSON.parse($('setting-geometry').value);}catch{throw new Error('Array geometry must be valid JSON, for example [[0,0],[0.04,0],[0,0.04]], or [].');}await configure({source:$('setting-source').value,device:$('setting-device').value===''?null:Number($('setting-device').value),sample_rate:Number($('setting-rate').value),fft_size:Number($('setting-fft').value),channels:Number($('setting-channels').value),hop_size:Number($('setting-hop').value),mic_positions:geometry,zero_tolerance_hz:Number($('setting-tolerance').value),calibration_seconds:Number($('setting-calibration').value),harmonics_enabled:$('setting-harmonics').checked});$('settings-dialog').close();});
-bind('setting-device','change',()=>{const option=$('setting-device').selectedOptions[0];if(option?.dataset.rate)$('setting-rate').value=option.dataset.rate;if(option?.dataset.channels){$('setting-channels').max=option.dataset.channels;$('setting-channels').value=Math.min(Number($('setting-channels').value),Number(option.dataset.channels));}$('setting-geometry').value='[]';});
+bind('settings-form','submit',async e=>{e.preventDefault();let geometry;try{geometry=JSON.parse($('setting-geometry').value);}catch{throw new Error('Array geometry must be valid JSON, for example [[0,0],[0.04,0],[0,0.04]], or [].');}await configure({source:$('setting-source').value,device:$('setting-device').value===''?null:Number($('setting-device').value),sample_rate:Number($('setting-rate').value),fft_size:Number($('setting-fft').value),channels:Number($('setting-channels').value),hop_size:Number($('setting-hop').value),mic_positions:geometry,stereo_synchronized:$('setting-stereo-sync').checked,stereo_spacing_m:Number($('setting-stereo-spacing').value),stereo_axis_deg:Number($('setting-stereo-axis').value),zero_tolerance_hz:Number($('setting-tolerance').value),calibration_seconds:Number($('setting-calibration').value),harmonics_enabled:$('setting-harmonics').checked});$('settings-dialog').close();});
+bind('setting-device','change',()=>{const option=$('setting-device').selectedOptions[0];if(option?.dataset.rate)$('setting-rate').value=option.dataset.rate;if(option?.dataset.channels){$('setting-channels').max=option.dataset.channels;$('setting-channels').value=Math.min(Number($('setting-channels').value),Number(option.dataset.channels));}$('setting-geometry').value='[]';$('setting-stereo-sync').checked=false;});
 bind('setting-source','change',()=>{if($('setting-source').value==='microphone'){const option=$('setting-device').selectedOptions[0];if(option?.dataset.rate)$('setting-rate').value=option.dataset.rate;}});
 bind('setting-fft','change',()=>{const max=Number($('setting-fft').value);$('setting-hop').max=max;if(Number($('setting-hop').value)>max)$('setting-hop').value=max;});
 bind('show-archive','click',()=>view('events'));bind('event-filter','change',async()=>{state.archiveLimit=200;await refreshArchive();});
@@ -311,7 +328,7 @@ bind('recovery-apply','click',async()=>{
   if(!selected)throw new Error('Refresh inputs and select a microphone.');
   const device=selected.value===''?null:Number(selected.value),channels=Math.min(state.config.channels,Number(selected.dataset.channels) || state.config.channels);
   const changes={source:'microphone',device,sample_rate:Number(selected.dataset.rate) || state.config.sample_rate,channels};
-  if(device!==state.config.device || channels!==state.config.channels)changes.mic_positions=[];
+  if(device!==state.config.device || channels!==state.config.channels){changes.mic_positions=[];changes.stereo_synchronized=false;}
   await configure(changes);await api('capture/stop','POST');await api('capture/start','POST');
   toast('Selected input applied. Waiting for live samples.');
 });

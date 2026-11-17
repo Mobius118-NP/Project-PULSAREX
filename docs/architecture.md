@@ -6,9 +6,37 @@
 
 Harmonic grouping is optional and heuristic. Frequency-shift estimates require a significant peak in the configured reference window. Competing similarly strong tones produce an ambiguous state. The continuous colour ramp has a green neutral plateau and continuous joins at its boundaries. Numerical measurements are not smoothed.
 
-`baseline.py` uses online mean/variance during timed calibration. Quiet-frame adaptation is slow; significant deviations are excluded. Statistics are written atomically and checked against source/spectral settings before reuse.
+`baseline.py` uses a bounded 512-frame reservoir to estimate per-linear-FFT-bin median and scaled MAD. Optional clipped, time-based EWMA center adaptation excludes anomalous frames and supports freeze/reset. Named reviewed profiles persist atomically and are checked against input/spectral settings before reuse. Matching states are suggestions requiring operator activation. See [the model](acoustic-model.md) for thresholds, assumptions and limitations.
 
-`storage.py` detects positive and negative spectral deviations, applies a cooldown and stores observations in SQLite with WAL and locking. Retention is bounded to 5,000 rows. Duration is elapsed deviation time at emission, not a completed-event duration. Scores are heuristics, not classification probabilities.
+`events.py` detects positive and negative deviations on original FFT bins using both dB and robust variation thresholds. It tracks UUID event lifecycles, temporal descriptors and compact spectral evidence. `storage.py` applies an additive migration to existing JSON event storage, upserts active/completed observations, preserves annotations, and maintains compact reviewed signatures. SQLite uses WAL/locking with retention bounded to 5,000 events and 256 signatures. Scores are heuristics, not classification probabilities.
+
+`api.py` adds authenticated versioned routes, filtered review/history and local OpenAPI documentation while preserving legacy paths. `integrations.py` keeps bounded ARGOS visual evidence and clock uncertainty separate from acoustic observations and rejects identity fields. `network.py` supplies optional mDNS and an explicitly enabled HTTPS fallback selector; direct public serving remains disabled. `stereo.py` exposes experimental time delay and unresolved two-microphone bearing ambiguity. None of these modules classifies physical sources.
+
+The PyInstaller entry in `packaging/launcher.py` dispatches spawned native workers before importing the server. Static assets are bundled separately from writable external configuration/data. Packaging behavior and independent smoke-test boundaries are in [packaging](packaging.md).
+
+Event writes use a separate persistence thread and a 128-entry queue. DSP submission
+never waits for a slow event database. Queue saturation increments an exposed dropped
+update counter and warning. Shutdown drains the queue before closing SQLite. Baseline
+snapshots still save at low frequency; failures are visible warnings. UI event polling
+is eventually consistent with queued writes, not a lossless delivery guarantee.
+
+```mermaid
+flowchart LR
+    Microphone[Shared-clock input device] --> Capture[Isolated capture process]
+    Capture --> Queue[Bounded audio queues]
+    Synthetic[Synthetic source] --> DSP[Overlapping FFT / features]
+    Queue --> DSP
+    DSP --> Baseline[Median-MAD baseline / gated EWMA]
+    Baseline --> Detector[Neutral deviation events]
+    Detector --> Writer[Bounded persistence worker]
+    Writer --> SQLite[(Local SQLite)]
+    DSP --> Snapshot[Bounded latest snapshot]
+    Snapshot --> API[Authenticated LAN HTTP / WebSocket]
+    SQLite --> API
+    ARGOS[Optional independent visual observations] --> Hub[Bounded evidence adapter]
+    Hub --> API
+    API --> Dashboard[Responsive local dashboard]
+```
 
 `engine.py` owns acquisition, the sliding window, latest frame and bounded shift/bearing histories. Analysis runs at the hop cadence. Dashboard snapshots publish at an independent update rate. Slow browsers receive the newest snapshot rather than a queue. WebSocket writes time out after two seconds.
 
@@ -20,4 +48,6 @@ Control operations are serialized separately from snapshot locking, so stopping 
 
 The olive/amber instrument presentation is isolated in `tactical.css`; measurement semantics and the continuous shift gradient are unchanged. A microphone-recovery panel exposes refresh, retry and replacement-input selection during driver errors. Device changes invalidate previous array geometry unless explicitly supplied again. Regular event polling retrieves five recent observations; the archive loads in user-requested pages instead of rebuilding 5,000 rows every two seconds. Browser requests time out, and socket loss invalidates displayed current measurements.
 
-Live direction is experimental GCC-PHAT plus far-field least squares for a measured synchronized planar array. At least three non-collinear channels are required. Confidence/uncertainty are heuristic; narrowband signals and reflections can be ambiguous. A single microphone and independent unsynchronized devices do not supply the required spatial evidence.
+Live direction is experimental GCC-PHAT plus far-field least squares for a measured synchronized planar array. Two distinct shared-clock channels support an ambiguous bearing pair through `direction.py` and `stereo.py`; three or more non-collinear channels use the planar least-squares path. Confidence/uncertainty are heuristic; narrowband signals and reflections can be ambiguous. A single microphone and independent unsynchronized devices do not supply the required spatial evidence.
+
+The two-microphone display never picks one candidate arbitrarily. `possible_bearings_deg` contains both mirror directions, while `bearing_deg` is null. Pair spacing and channel-order orientation determine the delay-to-angle conversion. Direction and delay are invalidated when samples stop; device/channel changes revoke stereo synchronization verification. See [two-microphone setup](two-microphone-bearing.md).

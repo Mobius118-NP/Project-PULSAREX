@@ -70,6 +70,7 @@ class Analyzer:
             for a, b in zip(self.edges[:-1], self.edges[1:], strict=True)
         ]
         self.previous = None
+        self.smoothed = None
         self.previous_fundamentals = []
 
     def analyze(self, samples):
@@ -81,6 +82,9 @@ class Analyzer:
             raise ValueError("Expected one finite FFT window")
         rms = float(np.sqrt(np.mean(x * x)))
         amplitude = np.abs(np.fft.rfft((x - x.mean()) * self.window)) * 2 / self.window.sum()
+        # Parseval-normalized one-sided bin power; sums to window-weighted mean square.
+        power = np.abs(np.fft.rfft((x - x.mean()) * self.window)) ** 2 / (len(x) * np.sum(self.window**2))
+        power[1:-1] *= 2
         amplitude[[0, -1]] *= 0.5
         db = 20 * np.log10(np.maximum(amplitude, 1e-7))
         band = (self.freq >= cfg.min_frequency) & (self.freq <= cfg.max_frequency)
@@ -100,8 +104,19 @@ class Analyzer:
                     "snr_db": round(float(db[i] - noise), 2),
                 }
             )
-        display = np.array([float(db[a:b].max()) if a < b else -140 for a, b in self.bin_ranges])
+        display = np.maximum.reduceat(db[:self.bin_ranges[-1][1]], [a for a, _ in self.bin_ranges])
+        alpha = -np.expm1(-cfg.hop_size/cfg.sample_rate/.15)
+        self.smoothed = display.copy() if self.smoothed is None else self.smoothed+alpha*(display-self.smoothed)
         centroid = float(np.sum(self.freq * amplitude) / max(amplitude.sum(), 1e-12))
+        bandwidth = float(np.sqrt(np.sum(amplitude * (self.freq - centroid)**2) / max(amplitude.sum(), 1e-12)))
+        band_levels = {}
+        boundaries = [cfg.min_frequency, *cfg.band_edges, cfg.max_frequency]
+        for label, lower, upper in zip(("low", "mid", "high"), boundaries[:-1], boundaries[1:], strict=True):
+            lower, upper = max(lower, cfg.min_frequency), min(upper, cfg.max_frequency)
+            mask = (self.freq >= lower) & (self.freq < upper)
+            band_levels[label] = {"range_hz": [lower, upper] if lower < upper else [],
+                                  "power_dbfs": round(float(10*np.log10(max(power[mask].sum(), 1e-14))), 2)
+                                  if lower < upper else None}
         norm = amplitude / max(np.linalg.norm(amplitude), 1e-12)
         flux = float(np.linalg.norm(np.maximum(0, norm - self.previous))) if self.previous is not None else 0
         self.previous = norm
@@ -123,9 +138,16 @@ class Analyzer:
         shift = candidate["hz"] - cfg.reference_hz if candidate else None
         return {
             "frequencies": self.centres.round(2).tolist(),
+            "analysis_range_hz": [cfg.min_frequency, cfg.max_frequency],
             "spectrum_dbfs": display.round(2).tolist(),
+            "smoothed_spectrum_dbfs": self.smoothed.round(2).tolist(),
             "rms_dbfs": round(20 * math.log10(max(rms, 1e-7)), 2),
             "centroid_hz": round(centroid, 2),
+            "bandwidth_hz": round(bandwidth, 2),
+            "peak_dbfs": round(20 * math.log10(max(float(np.max(np.abs(x))), 1e-7)), 2),
+            "band_energy": band_levels,
+            "_linear_dbfs": db.round(3).tolist(),
+            "_linear_frequencies": self.freq.tolist(),
             "flux": round(flux, 4),
             "noise_floor_dbfs": round(noise, 2),
             "resolution_hz": round(cfg.sample_rate / cfg.fft_size, 3),

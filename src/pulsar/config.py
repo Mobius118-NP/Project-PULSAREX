@@ -24,6 +24,17 @@ class Config:
     event_cooldown_seconds: float = 3.0
     harmonics_enabled: bool = True
     baseline_adaptation: bool = False
+    auto_calibrate: bool = True
+    adaptation_seconds: float = 300.0
+    sensitivity: float = 4.0
+    band_edges: list[float] = field(default_factory=lambda: [250.0, 4000.0])
+    sensor_id: str = "local-acoustic-01"
+    stereo_synchronized: bool = False
+    stereo_spacing_m: float = 0.1
+    stereo_axis_deg: float = 90.0
+    argos_enabled: bool = False
+    characterization_enabled: bool = False
+    mdns_enabled: bool = False
     host: str = "127.0.0.1"
     port: int = 8765
     data_dir: str = "data"
@@ -53,6 +64,10 @@ class Config:
             "calibration_seconds": (1, 120),
             "event_threshold_db": (3, 80),
             "event_cooldown_seconds": (0.2, 120),
+            "adaptation_seconds": (10, 86400),
+            "sensitivity": (2, 20),
+            "stereo_spacing_m": (0.01, 10),
+            "stereo_axis_deg": (0, 359.999),
         }
         for key, (low, high) in bounds.items():
             value = getattr(self, key)
@@ -72,9 +87,16 @@ class Config:
             raise ValueError("host must be an IP address or hostname")
         if not isinstance(self.data_dir, str) or not self.data_dir.strip():
             raise ValueError("data_dir must be a nonempty path")
-        for key in ("harmonics_enabled", "baseline_adaptation"):
+        for key in ("harmonics_enabled", "baseline_adaptation", "auto_calibrate", "stereo_synchronized",
+                    "argos_enabled", "characterization_enabled", "mdns_enabled"):
             if type(getattr(self, key)) is not bool:
                 raise ValueError(f"{key} must be boolean")
+        if (not isinstance(self.band_edges, list) or len(self.band_edges) != 2
+            or any(type(v) not in (int, float) or not math.isfinite(v) for v in self.band_edges)
+            or not 10 < self.band_edges[0] < self.band_edges[1] < 48000):
+            raise ValueError("band_edges requires two ordered finite frequency boundaries")
+        if not isinstance(self.sensor_id, str) or not 1 <= len(self.sensor_id) <= 100:
+            raise ValueError("sensor_id must be 1-100 characters")
         if not isinstance(self.mic_positions, list):
             raise ValueError("mic_positions must be a list of [x, y] positions")
         if self.mic_positions:
@@ -83,12 +105,14 @@ class Config:
             geometry = np.asarray(self.mic_positions, dtype=float)
             if (
                 geometry.shape != (self.channels, 2)
-                or self.channels < 3
+                or self.channels < 2
                 or not np.isfinite(geometry).all()
                 or len(np.unique(geometry, axis=0)) != self.channels
-                or np.linalg.matrix_rank(geometry - geometry.mean(axis=0)) < 2
+                or (self.channels >= 3 and np.linalg.matrix_rank(geometry - geometry.mean(axis=0)) < 2)
             ):
-                raise ValueError("Direction requires >=3 non-collinear, synchronized planar microphones")
+                raise ValueError("Direction requires two distinct synchronized microphones, or >=3 non-collinear microphones")
+            if self.channels == 2 and not .01 <= float(np.linalg.norm(geometry[1]-geometry[0])) <= 10:
+                raise ValueError("Two-microphone geometry spacing must be 0.01-10 metres")
         return self
 
     def public(self):

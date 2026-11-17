@@ -6,6 +6,16 @@ LAN-based acoustic spectral mapping and environmental change detection.
 
 The application includes a responsive local dashboard, microphone and synthetic acquisition, FFT/STFT spectrum and spectrogram, harmonic candidates, baseline calibration, processed-event history/CSV export, and experimental shift and array-direction displays.
 
+**PULSAREX 0.3.1** adds robust median/MAD background learning, optional clipped EWMA
+adaptation, detection on full FFT bins, multiple environmental profiles, event
+lifecycle/review, compact signature memory, versioned APIs, optional ARGOS/FOV and
+stereo-delay adapters, discovery and a Windows executable build. Existing capture,
+recovery, dashboard identity and continuous shift colors are preserved.
+
+See the [feature matrix and limitations](docs/features.md),
+[acoustic model](docs/acoustic-model.md), [API](docs/api-v1.md),
+[networking](docs/networking.md) and [Windows packaging](docs/packaging.md).
+
 ## Start on Windows
 
 Run `Install-PULSAR.cmd` once, then double-click `Start-PULSAR.cmd`. Python 3.11+ is required. Open **http://127.0.0.1:8765** and keep the terminal open. Ctrl+C stops the server.
@@ -79,13 +89,33 @@ Single-channel input supports spectral analysis. Direction estimates require sui
 
 ## Baseline and event history
 
-Calibrate a representative quiet interval, then compare the spectrum against that profile. Optional slow adaptation excludes significant deviations. Matching calibrations survive restart. Events contain neutral observations and heuristic scores, not identified objects. Duration is elapsed deviation time when an event is emitted. CSV export contains processed measurements only. Retention is bounded to 5,000 events.
+Calibrate a representative normal interval, then compare the spectrum against that profile. Optional slow adaptation excludes significant deviations. Matching calibrations survive restart. Events contain neutral observations and heuristic scores. Duration is elapsed deviation time while active and observed total duration when completed. CSV export contains processed measurements only. Retention is bounded to 5,000 events.
+
+Initialization now starts calibration automatically unless `auto_calibrate = false`.
+Leave normal fans, HVAC and other persistent background running while learning.
+Nothing removes that background from the original spectrum. A new tone can trigger
+an anomaly while the fan remains visible. The per-bin median/MAD model requires both
+the dB threshold and robust variation threshold to be exceeded. Optional adaptation
+changes the center slowly; MAD remains fixed until recalibration. Freeze prevents
+adaptation, while manual reset starts a new calibration.
+
+Save descriptive environmental states in **Environmental profiles & anomaly evidence**.
+Load a reviewed profile when changing operating states. Similarity suggestions never
+silently dismiss an anomaly. Calibration statistics from 0.2.0 are left intact but
+require recalibration for the new FFT-bin model. Existing event history is preserved.
+
+Click an event to inspect compact current/baseline evidence, add an annotation, and
+save a reviewed signature. Signature distances assist review; they do not identify
+the physical source. Active events update one record at cooldown intervals, complete
+when the deviation ends, and are marked interrupted when capture stops. Completed
+durations refer to observed acoustic deviations. A continuously changing demo can
+remain one persistent spectral event rather than many independent sounds.
 
 ## Experimental measurements
 
 Harmonic groups and temporal consistency are heuristic; they do not confirm source identity. The frequency-shift panel compares a detected tone with a known reference and marks similar competing tones ambiguous. It does not infer motion or velocity from arbitrary pitch changes. Its gradient is continuous with configurable neutral tolerance and colour saturation; numerical measurements remain unfiltered.
 
-Live bearing requires at least three non-collinear microphones on a synchronized input device with measured geometry in TOML. GCC-PHAT/far-field estimates are experimental and may be ambiguous for narrowband tones and reflections. Confidence and uncertainty are heuristic, not calibrated probabilities.
+Two microphones on one synchronized input now provide two possible acoustic bearings, shown on the polar map with uncertainty and time-delay information. Set channels to 2, verify the shared-clock input, and configure spacing/orientation in Configuration. Front/back remains unresolved. Three or more non-collinear microphones can still use the planar-array estimator. See [two-microphone setup](docs/two-microphone-bearing.md). Confidence and uncertainty are heuristic, not calibrated probabilities.
 
 ## LAN access
 
@@ -108,5 +138,65 @@ Use a trusted private network. Plain HTTP is unencrypted; use an HTTPS reverse p
 ```
 
 The synthetic tests cover spectral measurements, harmonics, signed shifts, gradient continuity, baselines, events/cooldown, bounded retention, simulated array bearing, lifecycle, REST controls, authentication, origin checks and WebSocket schema. Hardware accuracy and operation across separate LAN devices need separate validation. See [validation notes](docs/validation.md) and [architecture](docs/architecture.md).
+
+If an old Windows pytest temporary folder has restrictive permissions, use:
+
+```powershell
+New-Item -ItemType Directory -Force .test-tmp | Out-Null
+& .\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider --basetemp .test-tmp/run-unique
+```
+
+Choose a new run directory each time. Additional hardware-independent experiments:
+
+```powershell
+& .\.venv\Scripts\python.exe examples/profile_pipeline.py --frames 600
+& .\.venv\Scripts\python.exe examples/profile_pipeline.py --frames 200 --trace
+& .\.venv\Scripts\python.exe examples/multiresolution.py
+```
+
+Timing under allocation tracing includes tracing overhead; do not compare it directly
+with the real-time hop budget. The GitHub workflow tests Python 3.11/3.12 on Linux
+and Windows and builds/smoke-tests the Windows package when run on GitHub.
+
+## Standalone Windows application
+
+Build with `Build-PULSAREX.cmd`, then distribute the entire `dist/PULSAREX` folder.
+Run `PULSAREX.exe --open-browser` and open `http://127.0.0.1:8765`.
+The executable serves HTTP itself and does not need an installed Python interpreter.
+Packaged data default to `%LOCALAPPDATA%\PULSAREX`; `--data-dir` or external TOML
+overrides it. Source launches retain the `data/` default. Browser changes are runtime
+settings; put desired restart settings in external TOML:
+
+```powershell
+Copy-Item config.example.toml config.toml
+& .\.venv\Scripts\python.exe -m pulsar.main --config config.toml --open-browser
+```
+
+For LAN, set `PULSAR_TOKEN`, then add `--host 0.0.0.0`; enter the host's LAN address
+on another authorized device. Use its actual LAN IP, not 0.0.0.0 or the client's
+127.0.0.1. Optional discovery needs `.[discovery]` and `mdns_enabled = true`.
+Direct-IP access remains available when mDNS fails. Public internet serving stays
+disabled; the HTTPS fallback utility is for independently secured integration clients.
+
+## Repository map
+
+```text
+src/pulsar/audio.py          Bounded acquisition and isolated native driver process
+src/pulsar/dsp.py            Windowed analysis and experimental array/shift measurements
+src/pulsar/baseline.py       Robust background statistics and reviewed profiles
+src/pulsar/events.py         Baseline-relative lifecycle and neutral characterization
+src/pulsar/storage.py        SQLite events, annotations and signature memory
+src/pulsar/engine.py         Capture/DSP coordination and bounded live snapshots
+src/pulsar/server.py         Authentication, REST/WebSocket transport and local assets
+src/pulsar/api.py            Versioned review, profile and integration endpoints
+src/pulsar/integrations.py   Independent ARGOS evidence and external vibration adapter
+src/pulsar/network.py        Optional discovery and endpoint recovery
+src/pulsar/dashboard/        Self-contained responsive browser instruments
+tests/                      Hardware-independent regression and synthetic tests
+examples/                   Experiments, benchmark and frozen-server smoke test
+packaging/                  Multiprocessing-safe executable entry point
+```
+
+MIT licensed. No remote repository is configured; no GitHub publication was attempted.
 
 Digital levels are dBFS, not calibrated SPL. No physical-object classification, source identity, distance estimation or motion confirmation is implemented. The spectrogram holds at most 180 frames; shift and bearing histories are bounded. The `data/` folder stores event/baseline statistics and is ignored by Git. Use microphones where you are authorized to capture sound.

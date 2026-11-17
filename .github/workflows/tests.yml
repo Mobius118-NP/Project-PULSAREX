@@ -1,0 +1,30 @@
+name: Synthetic tests
+on: [push, pull_request]
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ['3.11', '3.12']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install -e ".[dev]"
+      - run: python -m pytest -q
+  windows-package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e ".[packaging,discovery]"
+      - run: python -m PyInstaller --noconfirm PULSAREX.spec
+      - run: python examples/smoke_executable.py dist/PULSAREX/PULSAREX.exe package-smoke
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PULSAREX-Windows
+          path: dist/PULSAREX/

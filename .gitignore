@@ -15,6 +15,12 @@ dist/
 *.db
 recordings/
 node_modules/
+.test-tmp/
+data/
+config.toml
+*.log
+*.zip
+benchmark-results.json
 Thumbs.db
 Desktop.ini
 *.lnk

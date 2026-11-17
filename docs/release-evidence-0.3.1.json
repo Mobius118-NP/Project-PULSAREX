@@ -1,0 +1,39 @@
+{
+  "release": "0.3.1",
+  "date": "2026-11-17",
+  "tests": {
+    "passed": 102,
+    "warnings": 1,
+    "seconds": 12.96
+  },
+  "frozen_modules_match_source": 16,
+  "dashboard_assets_match_source": true,
+  "frozen_smoke": {
+    "startup_seconds": 26.735,
+    "outside_venv": true,
+    "auto_calibration": true,
+    "static_dashboard": true,
+    "pause_resume": true,
+    "frozen_microphone_worker_error_recovery": true,
+    "two_microphone_pair": true,
+    "distribution_bytes": 147926835
+  },
+  "browser": {
+    "paired_polar_map": true,
+    "spacing_orientation_controls": true,
+    "simulated_label": true,
+    "console_errors": 0
+  },
+  "physical_two_microphone_capture_validated": false,
+  "assumptions": [
+    "Two distinct channels from a shared-clock input",
+    "Measured spacing and channel-order orientation",
+    "Matched channel latency",
+    "Far field and horizontal source plane"
+  ],
+  "limitations": [
+    "Front/back remains unresolved",
+    "No distance or elevation measurement",
+    "Confidence is heuristic"
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "release": "0.3.0",
+  "date": "2026-11-17",
+  "tests": {
+    "passed": 81,
+    "warnings": 1,
+    "seconds": 17.81
+  },
+  "source_matches_frozen_modules": true,
+  "benchmark": {
+    "frames": 600,
+    "median_processing_ms": 1.201,
+    "p95_processing_ms": 3.803,
+    "hop_budget_ms": 21.333333333333332,
+    "traced_peak_bytes": 0,
+    "second_half_traced_growth_bytes": 0,
+    "allocation_tracing": false,
+    "note": "Synthetic offline run; allocation tracing adds latency when enabled; not a hardware soak"
+  },
+  "frozen_smoke": {
+    "startup_seconds": 10.438,
+    "outside_venv": true,
+    "auto_calibration": true,
+    "static_dashboard": true,
+    "pause_resume": true,
+    "frozen_microphone_worker_error_recovery": true,
+    "distribution_bytes": 147904831
+  },
+  "browser": {
+    "rendering": true,
+    "profile_controls": true,
+    "event_review": true,
+    "capture_stop": true,
+    "mobile_viewport_width": 390,
+    "final_console_errors": 0
+  },
+  "not_validated": [
+    "physical microphone accuracy",
+    "real array synchronization/calibration",
+    "separate LAN client",
+    "cross-device mDNS",
+    "real ARGOS system",
+    "clean Windows machine",
+    "overnight hardware soak"
+  ],
+  "disabled_or_deferred": [
+    "public serving",
+    "automatic profile transition suppression",
+    "validated sound classifier",
+    "live multiresolution fusion"
+  ]
+}

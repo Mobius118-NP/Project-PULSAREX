@@ -2,8 +2,10 @@ import argparse
 import json
 import os
 import socket
+import sys
 import time
 import webbrowser
+from pathlib import Path
 from threading import Thread
 from urllib.error import URLError
 from urllib.request import urlopen
@@ -36,6 +38,7 @@ def main():
     parser.add_argument("--device", type=int)
     parser.add_argument("--host", help="Default: 127.0.0.1; LAN: 0.0.0.0 (requires PULSAR_TOKEN)")
     parser.add_argument("--port", type=int)
+    parser.add_argument("--data-dir", help="Persistent data directory (packaged default: LOCALAPPDATA/PULSAREX)")
     parser.add_argument("--list-devices", action="store_true")
     parser.add_argument(
         "--open-browser", action="store_true", help="Open the dashboard after the server is ready"
@@ -53,6 +56,12 @@ def main():
         return
     try:
         cfg = Config.load(args.config)
+        if args.data_dir:
+            cfg.data_dir = str(Path(args.data_dir).resolve())
+        elif args.config:
+            cfg.data_dir = str((Path(args.config).resolve().parent / cfg.data_dir).resolve())
+        elif getattr(sys, "frozen", False):
+            cfg.data_dir = str(Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "PULSAREX")
         for key in ("source", "device", "host", "port"):
             if getattr(args, key) is not None:
                 setattr(cfg, key, getattr(args, key))
@@ -88,7 +97,8 @@ def main():
                 print(f"LAN candidate: http://{address}:{cfg.port} (access token required)")
         except OSError:
             print("LAN address unavailable; check your network adapter settings.")
-    uvicorn.run(app, host=cfg.host, port=cfg.port, log_level="info", access_log=False)
+    uvicorn.run(app, host=cfg.host, port=cfg.port, log_level="info", access_log=False,
+                limit_concurrency=64, timeout_keep_alive=5, ws_max_size=1024, ws_max_queue=4)
 
 
 if __name__ == "__main__":
