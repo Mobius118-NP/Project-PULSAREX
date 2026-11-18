@@ -30,7 +30,7 @@ def wait_state(controller, expected, timeout=20):
 
 def test_launcher_lan_config_and_token_validation(tmp_path):
     base = Config(data_dir=str(tmp_path))
-    lan = launch_config(base, 'lan', '8765', 'simulation', 'test-only-token-123456789')
+    lan = launch_config(base, 'lan', '8765', 'simulation', '024681')
     assert lan.host == '0.0.0.0' and lan.port == 8765
     assert base.host == '127.0.0.1'
     local = launch_config(base, 'local', '8876', 'microphone', '')
@@ -81,7 +81,7 @@ def test_launcher_local_process_start_stop_and_port_release(tmp_path):
 
 def test_launcher_lan_process_requires_authentication(tmp_path):
     controller = ServerController()
-    token = 'test-only-launcher-token-0123456789'
+    token = '024681'
     try:
         cfg = Config(host='0.0.0.0', port=port(), data_dir=str(tmp_path))
         controller.start(cfg, token)

@@ -224,15 +224,15 @@ def test_invalid_configuration_rejected_cleanly(changes):
 
 def test_logout_revokes_replayed_cookie_and_login_is_limited(tmp_path):
     with client_for(
-        Config(data_dir=str(tmp_path)), token="test-long-private-token", autostart=False
+        Config(data_dir=str(tmp_path)), token="024681", autostart=False
     ) as client:
-        client.post("/api/login", json={"token": "test-long-private-token"})
+        client.post("/api/login", json={"token": "024681"})
         cookie = client.cookies.get("pulsar_session")
         client.post("/api/logout")
         assert client.get("/api/config", headers={"Cookie": f"pulsar_session={cookie}"}).status_code == 401
-        for _ in range(8):
-            assert client.post("/api/login", json={"token": "wrong"}).status_code == 401
-        assert client.post("/api/login", json={"token": "wrong"}).status_code == 429
+        for _ in range(5):
+            assert client.post("/api/login", json={"pin": "111111"}).status_code == 401
+        assert client.post("/api/login", json={"pin": "111111"}).status_code == 429
 
 
 def test_malformed_host_and_origin_do_not_crash_server(tmp_path):

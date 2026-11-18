@@ -36,7 +36,7 @@ def main():
     parser.add_argument("--config", help="TOML configuration path")
     parser.add_argument("--source", choices=["simulation", "microphone"])
     parser.add_argument("--device", type=int)
-    parser.add_argument("--host", help="Default: 127.0.0.1; LAN: 0.0.0.0 (requires PULSAR_TOKEN)")
+    parser.add_argument("--host", help="Default: 127.0.0.1; LAN: 0.0.0.0 (requires six-digit PULSAR_PIN)")
     parser.add_argument("--port", type=int)
     parser.add_argument("--data-dir", help="Persistent data directory (packaged default: LOCALAPPDATA/PULSAREX)")
     parser.add_argument("--list-devices", action="store_true")
@@ -81,7 +81,7 @@ def main():
         webbrowser.open(dashboard_url)
         return
     try:
-        app = create_app(cfg, token=os.environ.get("PULSAR_TOKEN"))
+        app = create_app(cfg, token=os.environ.get("PULSAR_PIN", os.environ.get("PULSAR_TOKEN")))
     except ValueError as exc:
         parser.error(str(exc))
     print(f"PULSAR Mk. II | {cfg.source} | no raw audio recording")
@@ -94,7 +94,7 @@ def main():
                 {item[4][0] for item in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET)}
             )
             for address in addresses:
-                print(f"LAN candidate: http://{address}:{cfg.port} (access token required)")
+                print(f"LAN candidate: http://{address}:{cfg.port} (six-digit PIN required)")
         except OSError:
             print("LAN address unavailable; check your network adapter settings.")
     uvicorn.run(app, host=cfg.host, port=cfg.port, log_level="info", access_log=False,

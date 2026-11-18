@@ -1,7 +1,6 @@
 """Native Windows-friendly launcher. Tk runs only on the GUI thread."""
 import multiprocessing as mp
 import os
-import secrets
 import sys
 import tkinter as tk
 import webbrowser
@@ -11,6 +10,7 @@ from tkinter import filedialog, ttk
 from . import __version__
 from .config import Config
 from .launcher_service import ServerController, launch_config, read_settings, save_settings
+from .security import generate_pin
 
 
 def default_data_dir():
@@ -32,7 +32,7 @@ class Launcher:
         self.mode = tk.StringVar(value='LAN (same Wi-Fi)' if settings.get('mode') == 'lan' else 'Local only')
         self.port = tk.StringVar(value=str(settings.get('port', 8765)))
         self.source = tk.StringVar(value='Live microphone' if settings.get('source') == 'microphone' else 'Synthetic demonstration')
-        self.token = tk.StringVar(value=secrets.token_urlsafe(24))
+        self.token = tk.StringVar(value=generate_pin())
         self.visible = tk.BooleanVar(value=False)
         self.auto_open = tk.BooleanVar(value=bool(settings.get('open_browser', True)))
         self.config_path = tk.StringVar(value=settings.get('config_path', str(default_config) if default_config.exists() else ''))
@@ -97,20 +97,22 @@ class Launcher:
         self.port_entry.grid(row=1, column=1, sticky='ew', padx=(0, 12), pady=(6, 0))
         self.source_box = ttk.Combobox(options, textvariable=self.source, values=['Synthetic demonstration', 'Live microphone'], state='readonly', width=24)
         self.source_box.grid(row=1, column=2, sticky='ew', pady=(6, 0))
-        ttk.Label(frame, text='LAN access token', style='Muted.TLabel').grid(row=3, column=0, sticky='w', pady=(18, 6))
+        ttk.Label(frame, text='LAN access PIN (6 digits)', style='Muted.TLabel').grid(row=3, column=0, sticky='w', pady=(18, 6))
         tokens = ttk.Frame(frame)
         tokens.grid(row=4, column=0, sticky='ew')
         tokens.columnconfigure(0, weight=1)
-        self.token_entry = ttk.Entry(tokens, textvariable=self.token, show='\u2022')
+        pin_input = self.root.register(lambda value: value == '' or (len(value) <= 6 and value.isascii() and value.isdigit()))
+        self.token_entry = ttk.Entry(tokens, textvariable=self.token, show='\u2022', validate='key',
+                                     validatecommand=(pin_input, '%P'))
         self.token_entry.grid(row=0, column=0, sticky='ew', padx=(0, 8))
-        self.generate = ttk.Button(tokens, text='Generate', command=lambda: self.token.set(secrets.token_urlsafe(24)))
+        self.generate = ttk.Button(tokens, text='Generate PIN', command=lambda: self.token.set(generate_pin()))
         self.generate.grid(row=0, column=1, padx=(0, 8))
-        self.copy_token_button = ttk.Button(tokens, text='Copy token', command=lambda: self.copy(self.token.get(), 'Access token copied. Paste it into the dashboard login.'))
+        self.copy_token_button = ttk.Button(tokens, text='Copy PIN', command=lambda: self.copy(self.token.get(), 'Access PIN copied. Paste it into the dashboard login.'))
         self.copy_token_button.grid(row=0, column=2)
-        self.show_token = ttk.Checkbutton(frame, text='Show token', variable=self.visible,
+        self.show_token = ttk.Checkbutton(frame, text='Show PIN', variable=self.visible,
                                           command=lambda: self.token_entry.configure(show='' if self.visible.get() else '\u2022'))
         self.show_token.grid(row=5, column=0, sticky='w', pady=(7, 0))
-        self.security_note = ttk.Label(frame, text='LAN access uses this token. It is never saved to disk.', style='Muted.TLabel')
+        self.security_note = ttk.Label(frame, text='Six-digit LAN PIN. Kept in memory; never saved to disk.', style='Muted.TLabel')
         self.security_note.grid(row=6, column=0, sticky='w', pady=(5, 15))
         cfg = ttk.Frame(frame)
         cfg.grid(row=7, column=0, sticky='ew')
@@ -142,7 +144,7 @@ class Launcher:
         ttk.Label(links, text='Other devices on the same Wi-Fi / LAN').grid(row=2, column=0, sticky='w')
         self.lan_links = ttk.Combobox(links, textvariable=self.lan_url, state='readonly')
         self.lan_links.grid(row=3, column=0, sticky='ew', pady=(5, 0), padx=(0, 8))
-        self.copy_lan = ttk.Button(links, text='Copy LAN link', command=lambda: self.copy(self.lan_url.get(), 'LAN link copied. Open it on the other device, then enter the token.'), state='disabled')
+        self.copy_lan = ttk.Button(links, text='Copy LAN link', command=lambda: self.copy(self.lan_url.get(), 'LAN link copied. Open it on the other device, then enter the PIN.'), state='disabled')
         self.copy_lan.grid(row=3, column=1, pady=(5, 0))
         ttk.Label(frame, text='Use a trusted private network. Closing this launcher stops capture and the server.\nMicrophone selection and two-mic geometry are available in the dashboard.',
                   style='Muted.TLabel', wraplength=650).grid(row=12, column=0, sticky='w', pady=(18, 0))
@@ -154,7 +156,7 @@ class Launcher:
         self.generate.configure(state='normal' if lan and not self.controller.busy else 'disabled')
         self.show_token.configure(state='normal' if lan else 'disabled')
         self.copy_token_button.configure(state='normal' if lan else 'disabled')
-        self.security_note.configure(text='LAN access uses this token. It is never saved to disk.' if lan else 'Local only: other devices cannot connect. No token is needed.')
+        self.security_note.configure(text='Six-digit LAN PIN. Kept in memory; never saved to disk.' if lan else 'Local only: other devices cannot connect. No PIN is needed.')
 
     def pick_config(self):
         selected = filedialog.askopenfilename(title='Choose PULSAREX configuration', filetypes=[('TOML configuration', '*.toml')])

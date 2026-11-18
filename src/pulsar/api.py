@@ -1,5 +1,7 @@
 """Versioned routes; server middleware authenticates all /api paths."""
+import asyncio
 import socket
+import sqlite3
 from datetime import UTC, datetime
 from typing import Literal
 from uuid import uuid4
@@ -23,6 +25,10 @@ class Annotation(BaseModel):
 class SignatureRequest(BaseModel):
     event_id: int = Field(ge=1)
     label: str = Field(min_length=1, max_length=120)
+
+
+class ClearEventsRequest(BaseModel):
+    confirm: Literal[True]
 
 
 class ExternalEvent(BaseModel):
@@ -109,6 +115,15 @@ def install_api(app, engine, hub, discovery, server_id, require_auth):
                     uncertainty="External observation; not a local microphone measurement")
         return engine.store.add(data)
 
+    @app.delete('/api/events')
+    @app.delete('/api/v1/events')
+    async def clear_events(body: ClearEventsRequest):
+        try:
+            deleted = await asyncio.to_thread(engine.clear_events)
+        except (RuntimeError, OSError, sqlite3.Error) as exc:
+            raise HTTPException(503, 'Could not finish clearing the archive; refresh and retry shortly') from exc
+        return {'deleted': deleted, 'scope': 'all events and event annotations', 'signatures_retained': True}
+
     @app.get("/api/v1/events/{event_id}")
     def detail(event_id: int):
         try:
@@ -153,4 +168,4 @@ def install_api(app, engine, hub, discovery, server_id, require_auth):
 
     @app.get("/api/v1/docs", response_class=HTMLResponse, include_in_schema=False)
     def docs():
-        return '<!doctype html><html lang="en"><meta charset="utf-8"><title>PULSAREX API</title><link rel="stylesheet" href="/style.css"><main><h1>PULSAREX API v1</h1><p>Bearer token or authenticated same-origin session required in LAN mode. POST and PATCH are controls. All units are relative digital measurements.</p><p><a href="/api/v1/openapi.json">Download OpenAPI schema</a> · <a href="/">Dashboard</a></p><pre id="api-schema">Loading local schema…</pre></main><script src="/api-docs.js"></script></html>'
+        return '<!doctype html><html lang="en"><meta charset="utf-8"><title>PULSAREX API</title><link rel="stylesheet" href="/style.css"><main><h1>PULSAREX API v1</h1><p>Six-digit PIN as a Bearer credential or authenticated same-origin session required in LAN mode. POST, PATCH and DELETE are controls. All units are relative digital measurements.</p><p><a href="/api/v1/openapi.json">Download OpenAPI schema</a> · <a href="/">Dashboard</a></p><pre id="api-schema">Loading local schema…</pre></main><script src="/api-docs.js"></script></html>'

@@ -14,6 +14,7 @@ from threading import Thread
 
 from .config import Config
 from .network import lan_addresses
+from .security import valid_pin
 
 
 def read_settings(path):
@@ -39,8 +40,8 @@ def launch_config(base, mode, port, source, token):
         number = int(port)
     except (ValueError, TypeError) as exc:
         raise ValueError('Port must be a whole number from 1 to 65535') from exc
-    if mode == 'lan' and not 16 <= len(token) <= 512:
-        raise ValueError('LAN mode needs an access token of 16-512 characters; use Generate')
+    if mode == 'lan' and not valid_pin(token):
+        raise ValueError('LAN mode needs a six-digit PIN (0-9); use Generate')
     return replace(base, host='0.0.0.0' if mode == 'lan' else '127.0.0.1', port=number,
                    source=source, mdns_enabled=base.mdns_enabled and mode == 'lan').validate()
 
@@ -134,8 +135,8 @@ class ServerController:
         config.validate()
         if config.host not in ('127.0.0.1', '0.0.0.0'):
             raise ValueError('The launcher supports Local or private LAN binding')
-        if config.host == '0.0.0.0' and (not token or not 16 <= len(token) <= 512):
-            raise ValueError('LAN mode requires a 16-512 character access token')
+        if config.host == '0.0.0.0' and not valid_pin(token):
+            raise ValueError('LAN mode requires a six-digit PIN (0-9)')
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
                 probe.bind((config.host, config.port))

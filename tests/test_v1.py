@@ -66,13 +66,13 @@ def test_external_events_and_argos_are_separate(tmp_path):
 
 
 def test_versioned_authentication_has_no_bypass(tmp_path):
-    app = create_app(Config(host='0.0.0.0', data_dir=str(tmp_path)), token='test-only-token-01234567890', autostart=False)
+    app = create_app(Config(host='0.0.0.0', data_dir=str(tmp_path)), token='024681', autostart=False)
     with TestClient(app, base_url='http://127.0.0.1') as client:
         for endpoint in ['status', 'spectrum', 'baseline', 'events', 'signatures', 'integrations', 'openapi.json', 'docs']:
             assert client.get('/api/v1/'+endpoint).status_code == 401
         assert client.post('/api/v1/baseline/reset').status_code == 401
         assert client.post('/api/v1/events', json={}).status_code == 401
-        assert client.get('/api/v1/status', headers={'Authorization': 'Bearer test-only-token-01234567890'}).status_code == 200
+        assert client.get('/api/v1/status', headers={'Authorization': 'Bearer 024681'}).status_code == 200
 
 
 def test_stereo_delay_ambiguity_and_validation():

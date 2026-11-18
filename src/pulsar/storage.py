@@ -1,10 +1,25 @@
 import json
 import sqlite3
+from dataclasses import dataclass, field
 from pathlib import Path
 from queue import Empty, Full, Queue
 from threading import Event, RLock, Thread
 
 from .events import EventDetector as EventDetector
+
+
+@dataclass
+class ArchiveClear:
+    done: Event = field(default_factory=Event)
+    deleted: int = 0
+    error: Exception | None = None
+
+    def result(self, timeout=6):
+        if not self.done.wait(timeout):
+            raise RuntimeError('Archive clearing is still pending; refresh the archive shortly')
+        if self.error:
+            raise self.error
+        return self.deleted
 
 
 class EventWriter:
@@ -24,6 +39,14 @@ class EventWriter:
             self.dropped += 1
             self.warnings['event_queue'] = f"Slow storage: {self.dropped} event updates dropped"
 
+    def request_clear(self):
+        request = ArchiveClear()
+        try:
+            self.queue.put_nowait(request)
+        except Full as exc:
+            raise RuntimeError('Event storage is busy; retry clearing the archive shortly') from exc
+        return request
+
     def _run(self):
         while not self.stopping.is_set() or not self.queue.empty():
             try:
@@ -31,11 +54,18 @@ class EventWriter:
             except Empty:
                 continue
             try:
-                self.store.add(event)
+                if isinstance(event, ArchiveClear):
+                    event.deleted = self.store.clear()
+                else:
+                    self.store.add(event)
                 self.warnings.pop('events', None)
             except (OSError, sqlite3.Error) as exc:
                 self.warnings['events'] = f"Event persistence unavailable: {exc}"
+                if isinstance(event, ArchiveClear):
+                    event.error = exc
             finally:
+                if isinstance(event, ArchiveClear):
+                    event.done.set()
                 self.queue.task_done()
 
     def close(self):
@@ -61,6 +91,10 @@ class EventStore:
             self.connection.execute("ALTER TABLE events ADD COLUMN event_key TEXT")
         self.connection.execute("CREATE UNIQUE INDEX IF NOT EXISTS event_key ON events(event_key)")
         self.connection.execute("CREATE TABLE IF NOT EXISTS signatures (id INTEGER PRIMARY KEY, label TEXT, features TEXT)")
+        self.connection.execute('CREATE TABLE IF NOT EXISTS archive_meta (key TEXT PRIMARY KEY, value INTEGER NOT NULL)')
+        next_id = self.connection.execute('SELECT COALESCE(MAX(id),0)+1 FROM events').fetchone()[0]
+        self.connection.execute("INSERT OR IGNORE INTO archive_meta VALUES ('next_event_id', ?)", (next_id,))
+        self.connection.execute("UPDATE archive_meta SET value=MAX(value,?) WHERE key='next_event_id'", (next_id,))
         self.connection.commit()
 
     def add(self, event):
@@ -73,9 +107,10 @@ class EventStore:
                 self.connection.execute("UPDATE events SET payload=? WHERE id=?",
                                         (json.dumps(event, allow_nan=False), row[0]))
                 return {**event, "id": row[0]}
+            next_id = self.connection.execute("SELECT value FROM archive_meta WHERE key='next_event_id'").fetchone()[0]
             cursor = self.connection.execute(
-                "INSERT INTO events(payload,event_key) VALUES (?,?)", (json.dumps(event, allow_nan=False), key)
-            )
+                "INSERT INTO events(id,payload,event_key) VALUES (?,?,?)", (next_id, json.dumps(event, allow_nan=False), key))
+            self.connection.execute("UPDATE archive_meta SET value=? WHERE key='next_event_id'", (next_id+1,))
             event = {**event, "id": cursor.lastrowid}
             self.connection.execute("DELETE FROM events WHERE id <= ?", (cursor.lastrowid - self.retention,))
         return event
@@ -93,6 +128,13 @@ class EventStore:
     def count(self):
         with self.lock:
             return self.connection.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+
+    def clear(self):
+        """Delete event records/annotations; retain independent signatures and ID sequence."""
+        with self.lock, self.connection:
+            count = self.connection.execute('SELECT COUNT(*) FROM events').fetchone()[0]
+            self.connection.execute('DELETE FROM events')
+        return count
 
     def get(self, event_id):
         with self.lock:

@@ -83,6 +83,14 @@ class Engine:
             self.writer.submit({**self.detector.active, "state": "interrupted", "uncertainty": reason})
         self.detector.reset()
 
+    @serialized
+    def clear_events(self):
+        # The ordered barrier follows all old writes. DSP can resume while disk clears.
+        with self.lock:
+            request = self.writer.request_clear()
+            self.detector.reset()
+        return request.result()
+
     def _save_baseline(self, force=False):
         now = time.monotonic()
         if not self.baseline.ready or not self.baseline.dirty:
@@ -484,8 +492,8 @@ class Engine:
                                                      self.profile_id, cfg.sensor_id, cfg.band_edges)
                         if event and cfg.characterization_enabled:
                             event["characterization"] = characterize(frame)
-                    if event:
-                        self.writer.submit(event)
+                        if event:
+                            self.writer.submit(event)
                     if now >= next_publish:
                         self.known_state = None
                         values = np.asarray(frame["_linear_dbfs"])

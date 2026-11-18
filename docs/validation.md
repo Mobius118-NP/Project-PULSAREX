@@ -1,5 +1,93 @@
 # Validation
 
+## Brutalist terminal palette — 18 November 2026
+
+Applied the exact supplied palette to surfaces, text, borders, charts and status
+controls; bundled IBM Plex Sans/Mono and their OFL notices for local serving.
+Browser computed-style checks confirmed chassis `rgb(16,19,16)`, instrument panel
+`rgb(9,12,9)`, divider `rgb(72,80,71)`, zero border radius, no panel box shadow and
+no page background image. Both named fonts were loaded successfully. No browser
+JavaScript errors were reported. At a 390 px viewport the archive's Clear archive
+control remained inside the page, with no horizontal document overflow. Dashboard
+script syntax and Ruff checks passed. The 122-test backend suite passed before the
+subsequent presentation-only edits. Signed frequency-shift mapping is preserved.
+Preview: [current terminal dashboard](terminal-preview.jpg).
+
+## Six-digit PIN and archive cleanup — 18 November 2026
+
+Full suite: **122 passed**, 25.52 seconds, one upstream Starlette/httpx deprecation
+warning. Ruff passed; dashboard JavaScript syntax checks passed. Eight new tests
+cover leading-zero PIN generation/validation, concurrent and global failed-guess
+budgets, expiry, shared login/API/WebSocket limits, existing sessions during
+lockout, rejection of old long credentials, archive/signature preservation,
+monotonic IDs across clear/restart, queued-write ordering, authentication/explicit
+confirmation/origin checks, detector reset and storage-failure reporting.
+
+The source GUI generates exactly six ASCII digits with a cryptographically secure
+random generator. PINs are not stored in preferences or included in URLs. Login
+creates a separate random session cookie. Both HTTP bearer guesses and WebSocket
+handshakes use the same five-per-client/thirty-per-server five-minute failure
+budgets. Console operation accepts `PULSAR_PIN` (with a six-digit `PULSAR_TOKEN`
+environment-variable alias). No new EXE was built.
+
+Browser checks used a separate disposable, PIN-protected test server and synthetic
+audio. A PIN containing a leading zero authenticated successfully. Event archive
+displayed Clear archive and reached an empty state after clearing test records.
+The user's actual event database and ARGOS catalogue were not modified by these
+checks. See [PIN login](pin-login.jpg) and [archive control](archive-clear.jpg).
+
+## PULSAREX 0.5.0 ARGOS integration — 18 November 2026
+
+Follow-up: installed the official buffalo_l `w600k_r50.onnx` model locally and
+verified the archive/model hashes; see [model evidence](argos-models.md). ONNX
+Runtime returned a finite 512-component synthetic result. A separate real-model
+smoke check computed a synthetic image embedding, explicitly enrolled it in a
+disposable test catalogue, matched it and reloaded the persisted name. No real
+person was enrolled or added to the user's catalogue. This establishes the model
+and persistence path, not biometric accuracy.
+
+Camera viewing and inline enrollment/catalogue controls now live under **ARGOS**.
+Monitor retains the acoustic instruments and visual-vector overlay. Browser checks
+confirmed live recognition startup, a detected face vector continuing on Monitor
+while the camera view/enrollment controls were hidden, and no JavaScript errors.
+At a 390 px viewport the ARGOS page had no horizontal overflow, and its enrollment
+controls remained available. Camera capture was stopped before saving the ARGOS
+page screenshots. [Monitor overlay](monitor-argos-overlay.jpg) and
+[ARGOS menu](argos-menu.jpg) previews show the separated workspaces.
+The six vision cases passed again; Ruff and all three dashboard script syntax
+checks passed. The older observations adapter also moved to ARGOS.
+
+Full PULSAR suite: **114 passed**, 65.89 seconds. Warnings were the existing upstream
+Starlette/httpx deprecation and an unwritable old pytest cache directory; all tests
+completed. Ruff and JavaScript syntax checks passed. Six new vision cases cover
+78° projection/heading/wraparound, bounded stale-frame eviction, LAN authentication,
+frame sequencing/stop, root/settings validation, separate WebSocket metadata and
+worker processing of synthetic pixels with detector/recognizer doubles. Synthetic
+identity tests do not use real biometric data or establish recognition accuracy.
+Catalogue commands also reject missing identity/track selections and blank renames.
+
+Physical camera 0 successfully opened and produced fresh frames at 640×480. The
+background browser displayed live video through the combined server, no browser
+script errors were reported, catalogue controls opened, and Stop camera released
+capture. No camera images, audio recordings or new enrolled identities were saved.
+The [combined dashboard preview](combined-dashboard.jpg) was captured after stopping
+the camera, using synthetic audio. It shows the new viewing panel beside the PPI.
+
+The original ARGOS test suite was also run: **20 passed, 1 failed**. Its existing
+`test_catalogue_graphical_list_name_editor_and_association_controls` test hardcodes
+desktop catalogue positions/callback assumptions that differ from the current
+ARGOS layout. That standalone desktop test remains unresolved; ARGOS application
+source was not changed. The new server catalogue is covered separately.
+
+Dependencies were installed in the source launcher's full-Python `.venv-gui`.
+ARGOS's missing YuNet weights were obtained with its existing OpenCV download helper.
+At the initial integration check, ArcFace weights and enrolled templates were
+absent; the weights have since been installed as described above. Real face-recognition
+accuracy, calibrated FOV/heading accuracy, simultaneous hardware audio/video
+performance, camera unplug/replug, prolonged memory stability and cross-device
+LAN video/jitter performance remain unvalidated.
+No new EXE was built; this integration is source-launcher only for now.
+
 ## PULSAREX 0.4.0 GUI launcher - 17 November 2026
 
 Full suite: **108 passed**, one upstream Starlette/httpx deprecation warning,

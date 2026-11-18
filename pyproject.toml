@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pulsar-mk2"
-version = "0.4.0"
+version = "0.5.0"
 description = "Local acoustic spectrum and environmental change observatory"
 requires-python = ">=3.11"
 dependencies = ["numpy>=1.26,<3", "scipy>=1.12,<2", "fastapi>=0.115,<1", "uvicorn[standard]>=0.30,<1", "sounddevice>=0.5,<1"]
@@ -12,6 +12,7 @@ dependencies = ["numpy>=1.26,<3", "scipy>=1.12,<2", "fastapi>=0.115,<1", "uvicor
 [project.optional-dependencies]
 dev = ["pytest>=8,<10", "httpx>=0.27,<1", "ruff>=0.8,<1"]
 discovery = ["zeroconf>=0.140,<1"]
+vision = ["opencv-python>=4.8,<5", "PyYAML>=6", "onnxruntime>=1.17", "Pillow>=10"]
 packaging = ["pyinstaller>=6.11,<7"]
 
 [project.scripts]
@@ -25,7 +26,7 @@ pulsarex-launcher = "pulsar.launcher:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-pulsar = ["dashboard/*"]
+pulsar = ["dashboard/*", "dashboard/fonts/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

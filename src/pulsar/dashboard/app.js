@@ -1,13 +1,13 @@
 'use strict';
 const $ = id => document.getElementById(id);
-const state = {config:null, frame:null, socket:null, sequence:-1, streamId:null, configRevision:-1, spectra:[], spectraTimes:[], events:[], archiveEvents:[], archiveLimit:200, archiveNewest:null, reconnect:null, connected:false, linkLost:false, lastReceived:0, view:'monitor'};
-const palette = {grid:'#29392c', text:'#9aaa8b', green:'#c1d98d', amber:'#d5b879'};
+const state = {config:null, frame:null, socket:null, sequence:-1, streamId:null, configRevision:-1, spectra:[], spectraTimes:[], events:[], archiveEvents:[], archiveLimit:200, archiveNewest:null, eventRevision:0, reconnect:null, connected:false, linkLost:false, lastReceived:0, view:'monitor'};
+const palette = {grid:'#293129', text:'#899187', green:'#A2BE91', amber:'#D8AC58', white:'#D1D5CC', fault:'#BA5548'};
 const number = (value, decimals=0) => Number.isFinite(value) ? value.toLocaleString(undefined, {maximumFractionDigits:decimals, minimumFractionDigits:decimals}) : '—';
 let inputInventory=null,recoveryLoading=false,recoveryVisible=false;
 let toastTimer;
 function toast(message, error=false) {
   const node = $('toast'); node.textContent = message; node.classList.remove('hidden');
-  node.style.borderColor = error ? '#ab6f56' : ''; clearTimeout(toastTimer);
+  node.style.borderColor = error ? palette.fault : ''; clearTimeout(toastTimer);
   toastTimer = setTimeout(() => node.classList.add('hidden'), 5000);
 }
 async function api(path, method='GET', body) {
@@ -59,7 +59,7 @@ function clearReadouts() {
   $('noise-detail').textContent='NO CURRENT NOISE ESTIMATE';
   $('spectrogram-detail').textContent=`${state.spectra.length} FRAMES / 180 MAX`;
   $('spectrogram-span').textContent=state.spectraTimes.length?`${number((state.spectraTimes.at(-1)-state.spectraTimes[0])/1000,1)} s HISTORY`:'0.0 s HISTORY';
-  $('shift-value').textContent='—';$('shift-value').style.color='#81917d';
+  $('shift-value').textContent='—';$('shift-value').style.color=palette.text;
   $('shift-status').textContent='NO CURRENT ESTIMATE';$('shift-marker').classList.add('hidden');
   $('observed-detail').textContent='OBSERVED — Hz';
   $('bearing-overlay').classList.remove('hidden');$('bearing-mode').textContent='UNAVAILABLE';
@@ -178,7 +178,7 @@ function chart(id) {
   const width=Math.round(rect.width*ratio), height=Math.round(rect.height*ratio);
   if (canvas.width!==width || canvas.height!==height) { canvas.width=width; canvas.height=height; }
   const ctx=canvas.getContext('2d'); ctx.setTransform(ratio,0,0,ratio,0,0); ctx.clearRect(0,0,rect.width,rect.height);
-  ctx.font='9px Consolas,monospace'; return {ctx,w:rect.width,h:rect.height};
+  ctx.font='9px "IBM Plex Mono",monospace'; return {ctx,w:rect.width,h:rect.height};
 }
 function grid(ctx,w,h,left=42,right=14,top=26,bottom=28) {
   const area={x:left,y:top,w:w-left-right,h:h-top-bottom};
@@ -201,21 +201,21 @@ function spectrum() {
   const yFor=db=>a.y+Math.max(0,Math.min(1,-db/100))*a.h;
   ctx.save();ctx.beginPath();ctx.rect(a.x,a.y,a.w,a.h);ctx.clip();
   if(frame.deviation_db) {
-    ctx.fillStyle='#d5b87935';
+    ctx.fillStyle=palette.amber+'35';
     frame.deviation_db.forEach((v,i)=>{if(Math.abs(v)>=(state.config?.event_threshold_db || 12))ctx.fillRect(xFor(frequencies[i]),a.y,Math.max(2,a.w/values.length),a.h);});
   }
   if (frame.baseline?.mean_dbfs) {
     ctx.strokeStyle=palette.amber;ctx.lineWidth=1;ctx.setLineDash([3,4]);ctx.beginPath();
     frame.baseline.mean_dbfs.forEach((v,i)=>{const x=xFor(frequencies[i]),y=yFor(v);i?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.stroke();ctx.setLineDash([]);
   }
-  const gradient=ctx.createLinearGradient(0,a.y,0,a.y+a.h);gradient.addColorStop(0,'#c1d98d38');gradient.addColorStop(1,'#c1d98d00');
-  ctx.beginPath();ctx.moveTo(xFor(frequencies[0]),a.y+a.h);values.forEach((v,i)=>ctx.lineTo(xFor(frequencies[i]),yFor(v)));ctx.lineTo(xFor(frequencies.at(-1)),a.y+a.h);ctx.closePath();ctx.fillStyle=gradient;ctx.fill();
+  ctx.beginPath();ctx.moveTo(xFor(frequencies[0]),a.y+a.h);values.forEach((v,i)=>ctx.lineTo(xFor(frequencies[i]),yFor(v)));ctx.lineTo(xFor(frequencies.at(-1)),a.y+a.h);ctx.closePath();ctx.fillStyle=palette.green+'12';ctx.fill();
   ctx.beginPath();values.forEach((v,i)=>{const x=xFor(frequencies[i]),y=yFor(v);i?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.strokeStyle=palette.green;ctx.lineWidth=1.4;ctx.stroke();
   ctx.fillStyle=palette.green;
   for (const peak of frame.peaks.slice(0,4)) { const x=xFor(peak.hz),y=yFor(peak.dbfs);ctx.beginPath();ctx.arc(x,y,2.5,0,Math.PI*2);ctx.fill();ctx.textAlign='center';ctx.fillText(number(peak.hz)+' Hz',x,Math.max(a.y+10,y-10)); }
   ctx.restore();
 }
-const heatStops=[[9,18,12],[30,54,34],[63,98,60],[142,172,99],[224,204,122],[249,239,202]];
+const heatStops=[[9,12,9],[32,38,32],[72,80,71],[162,190,145],[216,172,88],[209,213,204]];
+for(const legend of document.querySelectorAll('.heat-legend'))for(const color of ['#090C09','#202620','#A2BE91','#D8AC58','#D1D5CC']){const band=document.createElement('i');band.style.backgroundColor=color;legend.append(band);}
 function heat(value) {
   const v=Math.max(0,Math.min(.99999,(value+100)/90))*(heatStops.length-1),i=Math.floor(v),t=v-i;
   return heatStops[i].map((c,j)=>Math.round(c+(heatStops[i+1][j]-c)*t));
@@ -245,7 +245,19 @@ function polar() {
   ctx.fillStyle=palette.text;ctx.textAlign='center';ctx.fillText('000° N',x,y-r-12);ctx.fillText('180°',x,y+r+16);ctx.fillText('270°',x-r-13,y+3);ctx.fillText('090°',x+r+13,y+3);
   for(const visual of state.frame?.integrations?.visual_observations || []) {
     const center=(visual.fov_center_deg-90)*Math.PI/180, half=visual.fov_width_deg*Math.PI/360;
-    ctx.fillStyle='#ad8be327';ctx.strokeStyle='#ad8be3';ctx.setLineDash([3,4]);ctx.beginPath();ctx.moveTo(x,y);ctx.arc(x,y,r,center-half,center+half);ctx.closePath();ctx.fill();ctx.stroke();ctx.setLineDash([]);
+    ctx.fillStyle=palette.white+'18';ctx.strokeStyle=palette.white;ctx.setLineDash([3,4]);ctx.beginPath();ctx.moveTo(x,y);ctx.arc(x,y,r,center-half,center+half);ctx.closePath();ctx.fill();ctx.stroke();ctx.setLineDash([]);
+  }
+  const visual=window.currentVision?.();
+  if(visual){
+    const center=(visual.camera_heading_deg-90)*Math.PI/180,half=39*Math.PI/180;
+    ctx.fillStyle=palette.white+'12';ctx.strokeStyle=palette.white;ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(x,y);ctx.arc(x,y,r,center-half,center+half);ctx.closePath();ctx.fill();ctx.stroke();ctx.setLineDash([]);
+    ctx.font='10px "IBM Plex Mono",monospace';ctx.textAlign='center';
+    for(const face of window.currentVisualFaces?.() || []){const angle=(face.bearing_deg-90)*Math.PI/180;
+      ctx.strokeStyle=palette.white;ctx.fillStyle=palette.white;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+Math.cos(angle)*r*.9,y+Math.sin(angle)*r*.9);ctx.stroke();
+      ctx.beginPath();ctx.arc(x+Math.cos(angle)*r*.9,y+Math.sin(angle)*r*.9,4,0,Math.PI*2);ctx.fill();
+      const label='VIS '+(face.identity_id || 'Unknown')+' / T'+face.track_id;
+      ctx.fillText(label,x+Math.cos(angle)*r*.72,y+Math.sin(angle)*r*.72-8);
+    }
   }
   const direction=state.frame?.direction;if(!direction?.available || state.frame.measurement_valid===false)return;
   const bearings=direction.possible_bearings_deg || [direction.bearing_deg];
@@ -256,8 +268,8 @@ function polar() {
     ctx.fillStyle=color;ctx.beginPath();ctx.arc(x+Math.cos(a)*r*.85,y+Math.sin(a)*r*.85,4,0,Math.PI*2);ctx.fill();
   };
   const history=state.frame?.bearing_history || [];
-  history.slice(-35).forEach((point,i)=>{for(const bearing of point.possible_bearings_deg || [point.bearing_deg]){if(!Number.isFinite(bearing))continue;const a=(bearing-90)*Math.PI/180;ctx.fillStyle=`rgba(94,227,170,${.08+i/50})`;ctx.beginPath();ctx.arc(x+Math.cos(a)*r*.85,y+Math.sin(a)*r*.85,1.8,0,Math.PI*2);ctx.fill();}});
-  bearings.forEach((bearing,i)=>drawBearing(bearing,direction.uncertainty_deg ?? 12,i===0?'#5ee3aa':'#d5b879'));
+  history.slice(-35).forEach((point,i)=>{for(const bearing of point.possible_bearings_deg || [point.bearing_deg]){if(!Number.isFinite(bearing))continue;const a=(bearing-90)*Math.PI/180;ctx.fillStyle=`rgba(162,190,145,${.08+i/50})`;ctx.beginPath();ctx.arc(x+Math.cos(a)*r*.85,y+Math.sin(a)*r*.85,1.8,0,Math.PI*2);ctx.fill();}});
+  bearings.forEach((bearing,i)=>drawBearing(bearing,direction.uncertainty_deg ?? 12,i===0?palette.green:palette.amber));
 
 }
 function shiftHistory() {
@@ -282,21 +294,24 @@ function eventRows(events,node,archive=false) {
 }
 async function refreshEvents() {
   if(!state.config)return;
+  const revision=state.eventRevision;
   try{
-    const result=await api('events?limit=5');state.events=result.events;$('event-count').textContent=result.total ?? state.events.length;
+    const result=await api('events?limit=5');if(revision!==state.eventRevision)return;state.events=result.events;$('event-count').textContent=result.total ?? state.events.length;
     eventRows(state.events,$('recent-events'));$('events-empty').classList.toggle('hidden',!!state.events.length);
     if(state.view==='events' && state.archiveNewest!==state.events[0]?.id)await refreshArchive();
   }catch(error){console.warn('Event update',error.message);}
 }
 async function refreshArchive(){
+  const revision=state.eventRevision;
   const filter=$('event-filter').value;
   const selected=await api(`events?limit=${state.archiveLimit}${filter?'&category='+encodeURIComponent(filter):''}`);
+  if(revision!==state.eventRevision)return;
   state.archiveEvents=selected.events;state.archiveNewest=state.events[0]?.id;
   eventRows(state.archiveEvents,$('archive-events'),true);$('archive-empty').classList.toggle('hidden',!!state.archiveEvents.length);
   $('archive-shown').textContent=`${state.archiveEvents.length} OBSERVATIONS SHOWN / ${selected.total ?? '—'} STORED`;
   $('archive-more').classList.toggle('hidden',state.archiveEvents.length<state.archiveLimit || state.archiveLimit>=5000);
 }
-function view(name){state.view=name;$('monitor-view').classList.toggle('hidden',name!=='monitor');$('archive-view').classList.toggle('hidden',name!=='events');document.querySelectorAll('[data-view]').forEach(button=>button.classList.toggle('active',button.dataset.view===name));if(name==='events')refreshArchive().catch(error=>toast(error.message,true));drawAll();}
+function view(name){state.view=name;$('monitor-view').classList.toggle('hidden',name!=='monitor');$('archive-view').classList.toggle('hidden',name!=='events');$('argos-view').classList.toggle('hidden',name!=='argos');$('acoustic-header').classList.toggle('hidden',name==='argos');document.querySelectorAll('[data-view]').forEach(button=>button.classList.toggle('active',button.dataset.view===name));if(name==='events')refreshArchive().catch(error=>toast(error.message,true));document.dispatchEvent(new CustomEvent('pulsar:viewchange',{detail:name}));drawAll();}
 async function openSettings(){
   const c=state.config;if(!c)return;
   $('setting-source').value=c.source;$('setting-rate').value=c.sample_rate;$('setting-fft').value=c.fft_size;$('setting-tolerance').value=c.zero_tolerance_hz;$('setting-calibration').value=c.calibration_seconds;$('setting-harmonics').checked=c.harmonics_enabled;
@@ -321,6 +336,16 @@ bind('setting-source','change',()=>{if($('setting-source').value==='microphone')
 bind('setting-fft','change',()=>{const max=Number($('setting-fft').value);$('setting-hop').max=max;if(Number($('setting-hop').value)>max)$('setting-hop').value=max;});
 bind('show-archive','click',()=>view('events'));bind('event-filter','change',async()=>{state.archiveLimit=200;await refreshArchive();});
 bind('archive-more','click',async()=>{state.archiveLimit=Math.min(5000,state.archiveLimit+200);await refreshArchive();});
+bind('clear-archive','click',async()=>{
+  if(!confirm('Clear the entire event archive and its annotations? This cannot be undone. Saved signatures and baseline profiles are kept. New detections will continue to be added.'))return;
+  const result=await api('v1/events','DELETE',{confirm:true});
+  state.eventRevision++;state.events=[];state.archiveEvents=[];state.archiveNewest=null;state.archiveLimit=200;
+  window.clearReviewedEvent?.();
+  eventRows([], $('recent-events'));eventRows([], $('archive-events'),true);
+  $('event-count').textContent='0';
+  await refreshEvents();await refreshArchive();
+  toast(result.deleted+' archived event'+(result.deleted===1?'':'s')+' cleared. New detections remain enabled.');
+});
 bind('recovery-refresh','click',refreshRecovery);
 bind('recovery-retry','click',async()=>{await api('capture/stop','POST');await api('capture/start','POST');toast('Input retry requested. Recovery controls remain available.');});
 bind('recovery-apply','click',async()=>{
@@ -333,8 +358,9 @@ bind('recovery-apply','click',async()=>{
   toast('Selected input applied. Waiting for live samples.');
 });
 $('login-dialog').addEventListener('cancel',e=>e.preventDefault());
-bind('login-form','submit',async e=>{e.preventDefault();try{await api('login','POST',{token:$('access-token').value});$('access-token').value='';$('login-error').textContent='';$('login-dialog').close();await initialize();}catch(error){$('login-error').textContent=error.message;}});
+bind('login-form','submit',async e=>{e.preventDefault();try{await api('login','POST',{pin:$('access-token').value});$('access-token').value='';$('login-error').textContent='';$('login-dialog').close();await initialize();}catch(error){$('login-error').textContent=error.message;}});
 window.addEventListener('resize',drawAll);
+document.fonts.ready.then(drawAll);
 setInterval(()=>{$('clock').textContent=new Date().toLocaleTimeString('en-GB')+' LOCAL';},1000);
 setInterval(refreshEvents,2000);
 setInterval(()=>{if(state.connected && state.lastReceived && Date.now()-state.lastReceived>5000)state.socket?.close();},1000);

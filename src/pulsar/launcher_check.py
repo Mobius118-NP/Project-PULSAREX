@@ -1,6 +1,5 @@
 """Packaged launcher IPC check; no real microphone capture and no token output."""
 import json
-import secrets
 import socket
 import time
 from pathlib import Path
@@ -9,13 +8,14 @@ from urllib.request import ProxyHandler, Request, build_opener
 
 from .config import Config
 from .launcher_service import ServerController
+from .security import generate_pin
 
 
 def main(destination):
     output = Path(destination).resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     controller = ServerController()
-    token = secrets.token_urlsafe(24)
+    token = generate_pin()
     started = time.monotonic()
     try:
         # Tcl assets must work from inside the bundle, not from a host Python.

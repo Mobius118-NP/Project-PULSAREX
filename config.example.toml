@@ -1,4 +1,4 @@
-# Copy to config.toml. Tokens belong in PULSAR_TOKEN, never in this file.
+# Copy to config.toml. PINs belong in PULSAR_PIN, never in this file.
 sample_rate = 48000
 fft_size = 4096
 hop_size = 1024

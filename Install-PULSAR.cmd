@@ -8,7 +8,7 @@ if not exist ".venv\Scripts\python.exe" (
     exit /b 1
   )
 )
-".venv\Scripts\python.exe" -m pip install -e ".[dev]"
+".venv\Scripts\python.exe" -m pip install -e ".[dev,vision]"
 if errorlevel 1 (
   echo Installation failed. Check the messages above and your internet connection.
 ) else (

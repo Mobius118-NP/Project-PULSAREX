@@ -2,10 +2,12 @@
 
 Interactive endpoint index: `/api/v1/docs` (local assets only).
 Machine-readable FastAPI OpenAPI: `/api/v1/openapi.json`.
-LAN requests require `Authorization: Bearer <PULSAR_TOKEN>` or an authenticated
-same-origin browser cookie. The token grants control access. Do not embed it in
-URLs or commit it. Browser login remains `/api/login`; session status `/api/session`.
-Legacy `/api/...` endpoints and `/ws` remain compatible.
+LAN requests require `Authorization: Bearer <six-digit-PIN>` or an authenticated
+same-origin browser cookie. The PIN grants control access. Do not embed it in
+URLs or commit it. Browser login uses `POST /api/login` with JSON `{"pin":"......"}`
+(replace the dots with six ASCII digits, keeping leading zeroes). The legacy JSON
+field `token` accepts the same six-digit string; long tokens are no longer accepted.
+Session status remains `/api/session`; legacy routes and `/ws` remain available.
 
 | Method | Endpoint | Result |
 |---|---|---|
@@ -21,6 +23,7 @@ Legacy `/api/...` endpoints and `/ws` remain compatible.
 | POST | `/api/v1/baseline/save`, `/load` | JSON `{"name":"fan-operating"}` |
 | GET | `/api/v1/events` | Bounded events; `limit`, `category`, `band`, `since`, `until` |
 | POST | `/api/v1/events` | Validated external neutral observation; labelled external |
+| DELETE | `/api/v1/events` | JSON `{"confirm":true}` clears all events/annotations; returns deleted count. Legacy alias `/api/events`. |
 | GET/PATCH | `/api/v1/events/{id}` | Detail/comparison or JSON `{"annotation":"reviewed"}` |
 | GET | `/api/v1/events/export` | Processed legacy-compatible CSV |
 | GET/POST | `/api/v1/signatures` | Reviewed signatures; POST `{"event_id":1,"label":"description"}` |
@@ -33,8 +36,20 @@ in query strings. Data are bounded latest snapshots, not a lossless event stream
 Poll `/events` to recover missed notifications. Slow writes time out in two seconds;
 clients reconnect and reset time history when stream ID changes. No raw samples are
 transmitted. Maximum 32 WebSocket clients; main server caps 64 concurrent requests.
-Control bodies are capped at 64 KiB, writes at 120/minute per client address, failed
-logins at 8/minute. This is a LAN perimeter, not a reviewed public service.
+Control bodies are capped at 64 KiB and writes at 120/minute per client address.
+Failed PIN guesses share one atomic budget across login, HTTP bearer requests and
+WebSocket handshakes: five failures per client address and thirty across the server
+per five minutes. Further guesses are rejected until the window expires. Existing
+random browser sessions remain usable during lockout. This is a LAN perimeter,
+not a reviewed public service.
+
+Archive clearing follows queued older event writes, resets the active detector
+lifecycle and retains baseline profiles, independent reviewed signatures and ARGOS
+identities. New detections continue to be recorded. Event row IDs are not reused
+after clearing, including across restarts. The dashboard asks for confirmation;
+the API also requires `confirm:true`. A missing/false confirmation returns 422;
+storage failure or a busy writer returns 503. Clearing is not secure disk erasure
+and does not shrink the SQLite database file.
 
 External event example (timezone required):
 
@@ -53,8 +68,8 @@ ARGOS example (current timestamp within 60 seconds, synchronized UTC clocks):
 ```
 
 Enable `argos_enabled` explicitly. Identity fields are rejected. Camera FOV sectors
-use purple dashed outlines on the shared polar visualization, independently from
-green acoustic bearings. Observation history is bounded at 256 and expires visually
+use signal-white dashed outlines on the shared polar visualization, independently from
+olive acoustic bearings. Observation history is bounded at 256 and expires visually
 after 60 seconds. Time association tolerance is the reported clock uncertainty plus
 100 ms acoustic allowance; association is never causal attribution. Actual ARGOS
 compatibility and clock alignment need end-to-end validation with that application.

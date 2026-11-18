@@ -23,7 +23,7 @@ one-file extraction of NumPy/SciPy and PortAudio. Double-click `PULSAREX.exe` to
 Without external configuration, packaged data default to `%LOCALAPPDATA%\PULSAREX`.
 `--data-dir` overrides that location. Relative data paths in external TOML resolve
 against the configuration file, not a bundle extraction directory. Dashboard assets
-are read-only package data. LAN tokens stay in GUI memory; console mode uses the PULSAR_TOKEN environment variable. The GUI never writes the token to preferences.
+are read-only package data. LAN PINs stay in GUI memory; console mode uses the PULSAR_PIN environment variable. The GUI never writes the PIN to preferences.
 
 The entry calls `multiprocessing.freeze_support()` before loading the application,
 so spawned microphone-driver workers dispatch correctly rather than starting another

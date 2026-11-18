@@ -45,12 +45,12 @@ def test_lan_requires_token(cfg):
 
 
 def test_auth_cookie_bearer_and_logout(cfg):
-    token = "test-only-high-entropy-access-token"
+    token = "024681"
     with client_for(replace(cfg, host="0.0.0.0"), token=token, autostart=False) as client:
         assert client.get("/api/session").json()["authenticated"] is False
         assert client.get("/api/config").status_code == 401
-        assert client.post("/api/login", json={"token": "wrong"}).status_code == 401
-        assert client.post("/api/login", json={"token": "🤔"}).status_code == 401
+        assert client.post("/api/login", json={"pin": "111111"}).status_code == 401
+        assert client.post("/api/login", json={"pin": "🤔"}).status_code == 422
         assert client.post("/api/login", json={"token": token}).status_code == 200
         assert client.get("/api/config").status_code == 200
         client.post("/api/logout")
@@ -82,7 +82,7 @@ def test_websocket_schema_and_origin(cfg):
 
 
 def test_websocket_authentication(cfg):
-    with client_for(cfg, token="test-only-high-entropy-access-token", autostart=False) as client:
+    with client_for(cfg, token="024681", autostart=False) as client:
         with pytest.raises(WebSocketDisconnect):
             with client.websocket_connect("ws://127.0.0.1/ws"):
                 pass

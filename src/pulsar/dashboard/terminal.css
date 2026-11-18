@@ -1,0 +1,127 @@
+/* PULSAREX MK.II — BRUTALIST SIGNAL TERMINAL */
+@font-face {
+  font-family: 'IBM Plex Sans';
+  src: url('/fonts/IBMPlexSans.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 100 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('/fonts/IBMPlexMono-Regular.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+:root {
+  --chassis-black: #101310;
+  --instrument-black: #090C09;
+  --panel-grey: #202620;
+  --divider-grey: #485047;
+  --phosphor-olive: #A2BE91;
+  --industrial-amber: #D8AC58;
+  --signal-white: #D1D5CC;
+  --fault-red: #BA5548;
+  --muted-text: #899187;
+  --plot-grid: #293129;
+  --bg: var(--chassis-black);
+  --panel: var(--instrument-black);
+  --line: var(--divider-grey);
+  --muted: var(--muted-text);
+  --text: var(--signal-white);
+  --accent: var(--phosphor-olive);
+  --sans: 'IBM Plex Sans', 'Segoe UI', sans-serif;
+  --mono: 'IBM Plex Mono', monospace;
+}
+*, *::before, *::after {
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+}
+body { background: var(--chassis-black); color: var(--signal-white); font-family: var(--sans); }
+button:hover { filter: none; }
+:focus-visible { outline: 2px solid var(--industrial-amber); outline-offset: 3px; }
+.topbar { background: var(--chassis-black); border-color: var(--divider-grey); }
+.brand { font-family: var(--sans); font-weight: 600; }
+.brand-symbol, .brand small, .nav.active, .connection { color: var(--phosphor-olive); }
+.brand small { border-color: var(--divider-grey); }
+.brand em, .clock, .nav { color: var(--muted-text); }
+.nav, .eyebrow, .panel-header h2 { font-family: var(--mono); }
+.nav.active { border-color: var(--phosphor-olive); }
+h1 { font-family: var(--sans); color: var(--signal-white); letter-spacing: -.6px; }
+h1 span, .eyebrow, .workspace-heading p { color: var(--muted-text); }
+.panel, .metrics { background: var(--instrument-black); border-color: var(--divider-grey); }
+.panel::before { border-color: var(--phosphor-olive); }
+.panel-header { background: var(--panel-grey); border-color: var(--divider-grey); }
+.panel-header h2 { color: var(--signal-white); }
+.panel-number, .tag, .status-pill { color: var(--muted-text); border-color: var(--divider-grey); }
+.legend, .chart-unit, .panel-footer, .metric-label, .metric-sub, .metric-icon,
+.baseline-settings label, .table-empty, .system-panel dt, .page-footer, .muted,
+.bearing-readout small, .shift-readout p, .reference-controls label, .shift-footer,
+.harmonic small, .research-body p, .research-bands small, .form-note {
+  color: var(--muted-text) !important;
+}
+.panel-footer { background: var(--chassis-black); border-color: var(--plot-grid); }
+.metrics b, .bearing-readout b, .harmonic strong, .research-value, .system-panel dd,
+.baseline-copy h3, .research-body { color: var(--signal-white); }
+.metrics b, .metric-sub, .research-body, .argos-catalogue input { font-family: var(--mono); }
+.metrics article, .harmonic, .system-panel dl>div { border-color: var(--plot-grid); }
+.metrics.stale b { color: var(--muted-text); }
+.mini-bars, .harmonic span { color: var(--phosphor-olive); }
+.button { background: var(--panel-grey); border-color: var(--divider-grey); color: var(--signal-white); }
+.button:hover:not(:disabled) { border-color: var(--phosphor-olive); }
+.button.primary { background: var(--phosphor-olive); color: var(--instrument-black); border-color: var(--phosphor-olive); }
+.button.danger { color: var(--fault-red); border-color: var(--fault-red); }
+.text-button, .research-body a { color: var(--phosphor-olive); }
+.tag, .status-pill, .health, .mode-pill { background: var(--chassis-black); }
+.mode-pill, .demo-notice strong, .demo-notice button { color: var(--industrial-amber); }
+.mode-pill { border-color: var(--industrial-amber); }
+.mode-pill.live, .health { color: var(--phosphor-olive); border-color: var(--divider-grey); }
+.station-strip, .demo-notice, .input-recovery { background: var(--panel-grey); border-color: var(--divider-grey); }
+.station-strip { color: var(--muted-text); border-left-color: var(--phosphor-olive); }
+.station-strip b { color: var(--signal-white); }
+.station-strip.fault { border-left-color: var(--fault-red); }
+.station-strip.fault #station-state { color: var(--fault-red); }
+.demo-notice { color: var(--muted-text); border-left: 3px solid var(--industrial-amber); }
+.connection i, .tiny-dot { background: var(--phosphor-olive); }
+.connection i.offline { background: var(--fault-red); }
+.demo-notice .tiny-dot { background: var(--industrial-amber); }
+.input-recovery { border-left-color: var(--industrial-amber); }
+.input-recovery strong, .input-recovery label { color: var(--industrial-amber); }
+.input-recovery p { color: var(--muted-text); }
+.input-recovery .button.primary { background: var(--industrial-amber); border-color: var(--industrial-amber); color: var(--instrument-black); }
+.notice { color: var(--signal-white); background: var(--panel-grey); border-color: var(--fault-red); }
+select, input[type=number], input[type=password], input[type=text], textarea,
+.argos-catalogue input, .argos-catalogue select, .reference-controls label>div {
+  background: var(--chassis-black); border-color: var(--divider-grey); color: var(--signal-white);
+}
+.reference-controls input { color: var(--signal-white); }
+input[type=number], input[type=password], output, textarea, select { font-family: var(--mono); }
+input[type=range], input[type=checkbox] { accent-color: var(--phosphor-olive); }
+.baseline-settings output, td.change, #event-detail-note { color: var(--industrial-amber); }
+.baseline-copy p { color: var(--muted-text); }
+.progress-track { background: var(--plot-grid); }
+.progress-track>div, .legend .green, .timeline button { background: var(--phosphor-olive); }
+.legend .dashed { border-color: var(--industrial-amber); }
+th { background: var(--chassis-black); color: var(--muted-text); border-color: var(--divider-grey); }
+td { color: var(--signal-white); border-color: var(--plot-grid); }
+.archive-pagination { border-color: var(--divider-grey); color: var(--muted-text); }
+.research-bands div { border-color: var(--divider-grey); }
+.research-alert { border-color: var(--industrial-amber); }
+.research-body { font-family: var(--sans); }
+.research-bands b { font-family: var(--mono); color: var(--signal-white); }
+.event-details pre { background: var(--chassis-black); }
+.vision-view { background: var(--instrument-black); border-color: var(--divider-grey); }
+.vision-view span { color: var(--industrial-amber); background: var(--chassis-black); font-family: var(--mono); }
+#ppi-visual-status { color: var(--signal-white); }
+.bearing-overlay { background: var(--instrument-black); }
+.bearing-overlay b, .bearing-overlay span { color: var(--muted-text); }
+dialog { background: var(--instrument-black); color: var(--signal-white); border-color: var(--divider-grey); }
+dialog h2 { font-family: var(--sans); }
+dialog label { color: var(--signal-white); }
+dialog p { color: var(--muted-text); }
+dialog::backdrop { background: #090c09e0; backdrop-filter: none; }
+.toast { background: var(--panel-grey); color: var(--signal-white); border-color: var(--phosphor-olive); }
+.heat-legend { background: none !important; display: flex; }
+.heat-legend>i { width: 20%; height: 100%; }
+/* The signed shift legend is a scientific color scale, not a surface decoration. */

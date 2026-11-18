@@ -1,17 +1,22 @@
-# GUI launcher - 0.4.0
+# GUI launcher — current source application
+
+For the **0.5.0 combined ARGOS dashboard**, use the source `Start-PULSAR.cmd` launcher.
+After opening the dashboard, use ARGOS → Start ARGOS camera. Enrollment and camera
+viewing live in that menu; face vectors remain on Monitor's acoustic PPI. The existing packaged EXE
+predates this integration; rebuilding is deferred. See [ARGOS instructions](argos-integration.md).
 
 No PowerShell commands are needed for normal Windows operation.
 
-1. Extract the complete Windows ZIP into a folder.
-2. Double-click **PULSAREX.exe**. The native launcher opens without a terminal.
+1. Use the current source folder. Run `Install-PULSAR.cmd` once on a new setup.
+2. Double-click **Start-PULSAR.cmd**. The native launcher opens without a terminal.
 3. Choose **LAN (same Wi-Fi)** to allow authorized browsers on your local network,
    or **Local only** for this computer.
-4. Keep the generated access token or enter one with 16-512 characters. **Generate**
-   replaces it; **Copy token** lets you paste it into the dashboard login. It is
+4. Keep the generated six-digit access PIN or enter your own six digits (0-9). **Generate PIN**
+   replaces it; **Copy PIN** lets you paste it into the dashboard login. It is
    masked initially, kept in process memory and never saved in preferences or URLs.
 5. Choose **Synthetic demonstration** or **Live microphone**, then **Start server**.
 6. Once the status says running, use **Open dashboard** here. For another device,
-   click **Copy LAN link**, open that link on the same Wi-Fi/LAN, and enter the token.
+   click **Copy LAN link**, open that link on the same Wi-Fi/LAN, and enter the PIN.
 7. **Stop server** closes capture and releases the server port. Closing the launcher
    also stops its server. Leave the window open while using the dashboard.
 
@@ -30,10 +35,10 @@ remain in the dashboard; an optional TOML file can supply advanced startup setti
 
 Mode, port, selected audio source, optional TOML path and browser preference persist
 in `launcher-settings.json` in the application data directory. This file has an
-explicit allow-list and cannot contain the token. A new random token is generated
-when the launcher opens. Changes to token/connection settings are locked while its
-server runs; stop before changing them. Copying the token is an explicit operator
-action. Avoid leaving a sensitive token on a shared clipboard.
+explicit allow-list and cannot contain the PIN. A new random PIN is generated
+when the launcher opens. Changes to PIN/connection settings are locked while its
+server runs; stop before changing them. Copying the PIN is an explicit operator
+action. Avoid leaving a PIN on a shared clipboard.
 
 Packaged data default to `%LOCALAPPDATA%\PULSAREX`; source launches use the project's
 `data` directory. Relative data paths in a selected TOML resolve beside that file.

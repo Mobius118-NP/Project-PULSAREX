@@ -6,7 +6,15 @@ LAN-based acoustic spectral mapping and environmental change detection.
 
 The application includes a responsive local dashboard, microphone and synthetic acquisition, FFT/STFT spectrum and spectrogram, harmonic candidates, baseline calibration, processed-event history/CSV export, and experimental shift and array-direction displays.
 
-**PULSAREX 0.4.0** adds robust median/MAD background learning, optional clipped EWMA
+**PULSAREX 0.5.0** combines the local ARGOS camera with this server and dashboard:
+live video, 78° horizontal field of view, direction-only face vectors and optional
+enrolled face IDs on the acoustic PPI. The **ARGOS** menu contains camera viewing
+and enrollment; **Monitor** keeps the sound instruments and face-vector overlay.
+A bounded playback buffer absorbs
+short arrival gaps; stale video is labelled and old face vectors expire. Camera
+capture starts only when requested. See [ARGOS setup and limitations](docs/argos-integration.md).
+
+The application also includes robust median/MAD background learning, optional clipped EWMA
 adaptation, detection on full FFT bins, multiple environmental profiles, event
 lifecycle/review, compact signature memory, versioned APIs, optional ARGOS/FOV and
 stereo-delay adapters, discovery and a Windows executable build. Existing capture,
@@ -18,14 +26,20 @@ See the [feature matrix and limitations](docs/features.md),
 
 ## Start on Windows
 
-**Packaged application:** extract the complete ZIP and double-click **PULSAREX.exe**.
+**Current combined source application:** double-click **Start-PULSAR.cmd**. The
+existing native launcher starts the combined server. Choose **LAN (same Wi-Fi)**,
+click **Start server**, then **Open dashboard**. Open **ARGOS → Start ARGOS camera**.
+Source setup uses the local `ARGOS` folder in your Windows user folder. Recognition
+weights are installed on this host; see [model details](docs/argos-models.md).
+The existing executable releases predate this integration; a new EXE is deferred.
+
 The native GUI opens without a terminal. Choose **LAN (same Wi-Fi)**, keep or generate
-an access token, then click **Start server**. Use **Copy LAN link** on another device
-and **Copy token** for its login. Choose **Local only** to keep access on this computer.
+a six-digit PIN, then click **Start server**. Use **Copy LAN link** on another device
+and **Copy PIN** for its login. Choose **Local only** to keep access on this computer.
 **Stop server** or closing the launcher stops capture and the server.
 
-The GUI includes source/port selection, optional TOML configuration, masked token,
-browser opening and adapter-aware links. Preferences persist; the token is never
+The GUI includes source/port selection, optional TOML configuration, masked PIN,
+browser opening and adapter-aware links. Preferences persist; the PIN is never
 saved. See [GUI launcher instructions](docs/gui-launcher.md).
 
 
@@ -35,13 +49,18 @@ From PowerShell in this folder:
 
 ```powershell
 py -3 -m venv .venv
-& ".\.venv\Scripts\python.exe" -m pip install -e ".[dev]"
+& ".\.venv\Scripts\python.exe" -m pip install -e ".[dev,vision]"
 & ".\.venv\Scripts\python.exe" -m pulsar.main
 ```
 
 For a fresh clone, first run `git clone <your-repository-url> pulsar-mk2` and `cd pulsar-mk2`. Use the repository URL for your checkout.
 
 Default mode is **simulation**: a harmonic tone, slow frequency sweep, and periodic broadband event. It generates data without playing sound or using the microphone. Simulated bearing data are explicitly labelled and independent of the synthetic signal.
+
+Camera and audio controls are independent. Starting the camera does not replace
+synthetic audio with a live microphone. For a real acoustic bearing, configure a
+suitable synchronized two-channel input and measured geometry. With one microphone,
+visual vectors remain available while measured acoustic direction is unavailable.
 
 ## Live microphone
 
@@ -67,6 +86,11 @@ The application retries input failures every three seconds and shows an explicit
 During an input error, the **INPUT RECOVERY** panel stays available. Use **Refresh inputs**, **Retry current**, or **Use selected input** to recover without restarting the server. Input discovery and browser requests have separate failure states, so an unavailable input list does not disable the other controls. The driver runs in an isolated process with a six-second startup timeout. Switching devices clears previous array geometry unless you explicitly configure it for the new input.
 
 The interface uses an olive/amber instrument layout with explicit ACQUIRING, HOLD, INPUT FAULT and LINK LOST states. The Doppler/spectrum-shift indicator keeps its continuous blue/violet → green → red convention.
+
+The current [brutalist terminal theme](docs/terminal-theme.md) uses the specified
+chassis/instrument blacks, olive, amber, signal white and fault red. Surfaces are
+flat with square corners and no glow or shadows. IBM Plex Sans and IBM Plex Mono
+are bundled locally for offline dashboard use.
 
 ## Architecture
 
@@ -130,16 +154,30 @@ Two microphones on one synchronized input now provide two possible acoustic bear
 
 ## LAN access
 
-Loopback is the default. Explicit non-loopback binding requires an access token of at least 16 characters:
+The launcher provides **Generate PIN**, **Show PIN** and **Copy PIN**. PINs contain
+exactly six digits, including any leading zeroes. They stay in memory and are not
+saved with preferences. Browser login exchanges the PIN for a random session cookie.
+Failed guesses are limited across login, API and WebSocket access; see
+[networking](docs/networking.md). Older long access tokens are no longer accepted.
+
+Loopback is the default. Explicit non-loopback binding requires an access PIN of exactly six digits:
 
 ```powershell
-$env:PULSAR_TOKEN = Read-Host "Enter a long random access token"
+$env:PULSAR_PIN = Read-Host "Enter a six-digit access PIN"
 & ".\.venv\Scripts\python.exe" -m pulsar.main --host 0.0.0.0
 ```
 
-The server lists candidate LAN addresses. Open the host's address on an authorized device on the same network, for example `http://192.168.1.20:8765`, and enter the token. Browser sessions use HttpOnly/SameSite cookies; API clients can use `Authorization: Bearer ...`. Restarting the server invalidates browser sessions. Access includes capture/configuration controls.
+The server lists candidate LAN addresses. Open the host's address on an authorized device on the same network, for example `http://192.168.1.20:8765`, and enter the PIN. Browser sessions use HttpOnly/SameSite cookies; API clients can use `Authorization: Bearer ...`. Restarting the server invalidates browser sessions. Access includes capture/configuration controls.
 
 Use a trusted private network. Plain HTTP is unencrypted; use an HTTPS reverse proxy when confidentiality is required. No router port forwarding, firewall changes, cloud service or external account is configured automatically. Do not expose the server publicly.
+
+## Clear event history
+
+Open **Event archive → Clear archive** and confirm. This removes all saved acoustic
+events and their annotations. Saved signatures, baseline profiles and ARGOS face
+identities remain available. Export CSV first if you want a copy. New detections
+continue to populate the archive while acquisition is running. Clearing also drains
+older queued writes so they cannot restore deleted records.
 
 ## Validation and limitations
 
@@ -183,7 +221,7 @@ Copy-Item config.example.toml config.toml
 & .\.venv\Scripts\python.exe -m pulsar.main --config config.toml --open-browser
 ```
 
-For LAN, set `PULSAR_TOKEN`, then add `--host 0.0.0.0`; enter the host's LAN address
+For LAN, set `PULSAR_PIN`, then add `--host 0.0.0.0`; enter the host's LAN address
 on another authorized device. Use its actual LAN IP, not 0.0.0.0 or the client's
 127.0.0.1. Optional discovery needs `.[discovery]` and `mdns_enabled = true`.
 Direct-IP access remains available when mDNS fails. Public internet serving stays

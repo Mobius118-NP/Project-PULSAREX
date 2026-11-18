@@ -42,11 +42,40 @@ flowchart LR
 
 Control operations are serialized separately from snapshot locking, so stopping a worker never holds the lock the worker needs to finish. Threshold/reference controls update in place; source/format changes restart acquisition. New streams have unique IDs. Sequence discontinuities, overruns and reconnects clear the rolling FFT window and temporal associations. Missing, stopped or stale data invalidate current direction/shift readouts. Calibration counts contiguous acquired intervals rather than time spent disconnected. Baseline write failures are warnings rather than fatal acquisition errors, and adapted profiles are saved periodically and on stop.
 
-`server.py` exposes REST controls and WebSockets. Loopback is the default; LAN binding requires a token. Same-origin checks protect browser controls and sockets. Dashboard scripts and charts are served locally with no CDN or telemetry.
+`server.py` exposes REST controls and WebSockets. Loopback is the default; LAN binding
+requires a six-digit PIN. `security.py` generates PINs and applies an atomic failed-guess
+budget across login, bearer requests and WebSocket handshakes; successful browser
+logins receive independent random session credentials. Same-origin checks protect
+browser controls and sockets. Dashboard scripts and charts are served locally with
+no CDN or telemetry.
+
+Archive clearing is an ordered command in the bounded persistence queue. Under the
+engine's short snapshot lock, the command is enqueued and the active detector lifecycle
+is reset. The HTTP worker waits for completion outside that lock. Pending old writes
+finish before deletion; later detections are separate events and continue recording.
+Only events/annotations are deleted. A small SQLite metadata row preserves monotonic
+event IDs across clears/restarts so stale links cannot refer to new records.
+
+`vision.py` adds an independently spawned local ARGOS camera/detector/tracker and
+optional existing ArcFace catalogue. Bounded latest-frame queues isolate acquisition,
+model inference, HTTP and browser playback. `vision_api.py` exposes authenticated
+start/stop, frame/status and explicit catalogue controls. `vision.js` keeps a bounded
+decoded-frame jitter buffer and paints synchronized frame/face metadata; it adds
+direction-only visual rays to the existing polar instrument. Visual and acoustic
+evidence are not causally associated. The older external `integrations.py` identity
+restriction is preserved. See [geometry, cache limits and prerequisites](argos-integration.md).
 
 `dashboard/` provides responsive canvas instruments, controls, event history and CSV export. Simulation, input errors, pause, unavailable direction and unreliable shift estimates have distinct visible states. The spectrogram and histories are bounded.
 
-The olive/amber instrument presentation is isolated in `tactical.css`; measurement semantics and the continuous shift gradient are unchanged. A microphone-recovery panel exposes refresh, retry and replacement-input selection during driver errors. Device changes invalidate previous array geometry unless explicitly supplied again. Regular event polling retrieves five recent observations; the archive loads in user-requested pages instead of rebuilding 5,000 rows every two seconds. Browser requests time out, and socket loss invalidates displayed current measurements.
+The responsive instrument layout is in `tactical.css`; `terminal.css` applies the
+brutalist palette, flat surfaces and locally bundled IBM Plex fonts. Measurement
+semantics and the continuous shift scale are preserved. See [theme details](terminal-theme.md).
+A microphone-recovery panel exposes refresh, retry and replacement-input selection
+during driver errors. Device changes invalidate previous array geometry unless
+explicitly supplied again. Regular event polling retrieves five recent observations;
+the archive loads in user-requested pages instead of rebuilding 5,000 rows every
+two seconds. Browser requests time out, and socket loss invalidates displayed current
+measurements.
 
 Live direction is experimental GCC-PHAT plus far-field least squares for a measured synchronized planar array. Two distinct shared-clock channels support an ambiguous bearing pair through `direction.py` and `stereo.py`; three or more non-collinear channels use the planar least-squares path. Confidence/uncertainty are heuristic; narrowband signals and reflections can be ambiguous. A single microphone and independent unsynchronized devices do not supply the required spatial evidence.
 

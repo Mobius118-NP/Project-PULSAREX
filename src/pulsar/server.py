@@ -1,6 +1,5 @@
 import asyncio
 import csv
-import hmac
 import io
 import ipaddress
 import secrets
@@ -17,7 +16,7 @@ from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocket
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 
 from . import __version__
 from .api import install_api
@@ -25,7 +24,8 @@ from .audio import input_inventory
 from .engine import Engine
 from .integrations import IntegrationHub
 from .network import Discovery
-from .security import RequestBodyLimit
+from .security import PinAttempts, RequestBodyLimit, valid_pin
+from .vision import VisionService
 
 
 def is_loopback(host):
@@ -39,25 +39,23 @@ def _ip_loopback(host):
         return False
 
 
-def equal_secret(left, right):
-    return hmac.compare_digest(left.encode("utf-8"), right.encode("utf-8"))
-
-
 class Login(BaseModel):
-    token: str = Field(min_length=1, max_length=512)
+    pin: str = Field(min_length=6, max_length=6, pattern=r'^[0-9]{6}$',
+                     validation_alias=AliasChoices('pin', 'token'))
 
 
 def create_app(config, token=None, autostart=True):
     require_auth = not is_loopback(config.host) or bool(token)
-    if require_auth and (not token or len(token) < 16):
-        raise ValueError("LAN mode requires PULSAR_TOKEN containing at least 16 characters")
+    if require_auth and not valid_pin(token):
+        raise ValueError("LAN mode requires PULSAR_PIN containing exactly six digits (0-9)")
     sessions = OrderedDict()
-    attempts = OrderedDict()
+    attempts = PinAttempts()
     controls = OrderedDict()
     auth_lock = RLock()
     engine = Engine(config)
     hub = IntegrationHub()
     discovery = Discovery()
+    vision = VisionService()
     identity_path = Path(config.data_dir) / "server-id.txt"
     try:
         identity_path.parent.mkdir(parents=True, exist_ok=True)
@@ -75,6 +73,7 @@ def create_app(config, token=None, autostart=True):
         try:
             yield
         finally:
+            await asyncio.to_thread(vision.stop)
             await asyncio.to_thread(engine.close)
             await asyncio.to_thread(discovery.close)
 
@@ -87,6 +86,7 @@ def create_app(config, token=None, autostart=True):
         openapi_url=None,
     )
     app.state.engine = engine
+    app.state.vision = vision
     app.add_middleware(RequestBodyLimit)
     app.state.require_auth = require_auth
 
@@ -96,19 +96,29 @@ def create_app(config, token=None, autostart=True):
         return JSONResponse({"detail": [{"loc": e["loc"], "msg": e["msg"], "type": e["type"]}
                                         for e in exc.errors()]}, status_code=422)
 
-    def authorized(connection):
+    def authentication(connection):
         if not require_auth:
-            return True
-        bearer = connection.headers.get("authorization", "")
-        if equal_secret(bearer, f"Bearer {token}"):
-            return True
+            return 'ok'
         cookie = connection.cookies.get("pulsar_session", "")
         with auth_lock:
             expiry = sessions.get(cookie, 0)
-            if expiry <= time.monotonic():
-                sessions.pop(cookie, None)
-                return False
-            return True
+            if expiry > time.monotonic():
+                return 'ok'
+            sessions.pop(cookie, None)
+        bearer = connection.headers.get('authorization', '')
+        if not bearer:
+            return 'invalid'
+        key = connection.client.host if connection.client else 'unknown'
+        # Cache HTTP results only. WebSockets must recheck revoked/expired sessions.
+        if connection.scope['type'] == 'http' and '_pulsar_auth' in connection.scope:
+            return connection.scope['_pulsar_auth']
+        result = attempts.verify(key, bearer.removeprefix('Bearer '), token) if bearer.startswith('Bearer ') else attempts.verify(key, '', token)
+        if connection.scope['type'] == 'http':
+            connection.scope['_pulsar_auth'] = result
+        return result
+
+    def authorized(connection):
+        return authentication(connection) == 'ok'
 
     def origin_valid(connection):
         origin = connection.headers.get("origin")
@@ -145,8 +155,11 @@ def create_app(config, token=None, autostart=True):
         if request.method not in ("GET", "HEAD", "OPTIONS") and not origin_valid(request):
             return JSONResponse({"detail": "Cross-origin control rejected"}, status_code=403)
         if request.url.path.startswith("/api/") and request.url.path not in ("/api/session", "/api/login"):
-            if not authorized(request):
-                return JSONResponse({"detail": "Authentication required"}, status_code=401)
+            access = authentication(request)
+            if access != 'ok':
+                return JSONResponse({'detail': 'Too many PIN attempts; retry in five minutes' if access == 'limited' else 'Authentication required'},
+                                    status_code=429 if access == 'limited' else 401,
+                                    headers={'Retry-After': '300'} if access == 'limited' else None)
             if request.method in ("POST", "PATCH", "PUT", "DELETE"):
                 key = request.client.host if request.client else "unknown"
                 now = time.monotonic()
@@ -182,21 +195,13 @@ def create_app(config, token=None, autostart=True):
     def login(body: Login, request: Request):
         key = request.client.host if request.client else "unknown"
         now = time.monotonic()
-        with auth_lock:
-            while len(attempts) >= 256 and key not in attempts:
-                attempts.popitem(last=False)
-            history = attempts.setdefault(key, deque(maxlen=8))
-            while history and now - history[0] > 60:
-                history.popleft()
-            if len(history) >= 8:
-                raise HTTPException(429, "Too many login attempts; retry in one minute")
-        if require_auth and not equal_secret(body.token, token):
-            with auth_lock:
-                history.append(now)
-            raise HTTPException(401, "Incorrect access token")
+        result = attempts.verify(key, body.pin, token) if require_auth else 'ok'
+        if result == 'limited':
+            raise HTTPException(429, 'Too many PIN attempts; retry in five minutes', headers={'Retry-After': '300'})
+        if result != 'ok':
+            raise HTTPException(401, 'Incorrect access PIN')
         session = secrets.token_urlsafe(32)
         with auth_lock:
-            attempts.pop(key, None)
             sessions[session] = now + 28800
             while len(sessions) > 128:
                 sessions.popitem(last=False)
@@ -319,6 +324,7 @@ def create_app(config, token=None, autostart=True):
                     break
                 snapshot = engine.snapshot()
                 snapshot["integrations"] = hub.snapshot(engine.config.argos_enabled, snapshot.get("timestamp"))
+                snapshot['vision'] = vision.status()
                 await asyncio.wait_for(websocket.send_json(snapshot), timeout=2)
                 await asyncio.sleep(1 / engine.config.update_hz)
         except (TimeoutError, WebSocketDisconnect, RuntimeError):
@@ -327,6 +333,8 @@ def create_app(config, token=None, autostart=True):
             engine.clients -= 1
 
     install_api(app, engine, hub, discovery, server_id, require_auth)
+    from .vision_api import install_vision_api
+    install_vision_api(app, vision)
     dashboard = Path(__file__).parent / "dashboard"
     app.mount("/", StaticFiles(directory=dashboard, html=True), name="dashboard")
     return app
