@@ -20,7 +20,7 @@
 | Discovery | Optional mDNS with direct IP fallback. Cross-device discovery unverified. |
 | Endpoint recovery | Optional authenticated, pinned Python selector with HTTPS fallback and LAN restoration. Browser remains same-origin. |
 | Public deployment | Disabled. No TLS proxy, public role separation or internet deployment supplied. |
-| Windows EXE | Earlier PyInstaller distribution remains available; current 0.5.0 integration runs from the source GUI launcher. New EXE packaging deferred. Clean-machine/signing/installer validation pending. |
+| Windows EXE | Single Windows x64 executable includes Python, the GUI/server, ARGOS runtime and both models. The included InsightFace model is for non-commercial research. |
 | Multiresolution | Executable synthetic comparison supplied; simultaneous live fusion deferred. |
 | Classification | Optional tonal/unknown characteristics only. No validated speech VAD, mechanical classification, speaker identity, object identification or modulation classifier. |
 

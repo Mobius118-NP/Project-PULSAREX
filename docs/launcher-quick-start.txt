@@ -1,7 +1,7 @@
-PULSAREX - CURRENT SOURCE GUI LAUNCHER
+PULSAREX - WINDOWS GUI LAUNCHER
 
-1. Open the current source folder. On a new setup, run Install-PULSAR.cmd once.
-2. Double-click Start-PULSAR.cmd.
+1. Copy PULSAREX.exe from dist/onefile to the Windows x64 host.
+2. Double-click PULSAREX.exe. It includes Python and both ARGOS models.
 3. Select LAN (same Wi-Fi).
 4. Keep the generated six-digit PIN, or use Generate PIN. The PIN is not saved to disk.
 5. Choose Synthetic demonstration or Live microphone, then click Start server.
@@ -16,4 +16,4 @@ Port 8765 is the default. If it is in use, select a different port.
 Use a trusted private LAN. The launcher does not change firewall/router settings.
 Detailed instructions: docs/gui-launcher.md
 Archive cleanup: Event archive > Clear archive, then confirm.
-The earlier executable releases predate the latest source changes.
+ARGOS camera and recognition: choose ARGOS > Start ARGOS camera in the dashboard.

@@ -1,5 +1,28 @@
 # Validation
 
+## Standalone Windows x64 executable — 19 November 2026
+
+Built `dist/onefile/PULSAREX.exe` with Python 3.13.15 and PyInstaller 6.22.3.
+The binary is 280,166,819 bytes. SHA-256
+`44a7d70f22a2e9b28fdf2567108d325b40358e996ffc2d4870b7ab0264306109`.
+The archive inventory confirmed the Python DLL, dashboard fonts and both ARGOS
+weights. Saved face encodings, launcher settings, recordings and event databases
+are absent from the bundle.
+
+The isolated smoke test copied only the EXE to a separate folder, used a
+Windows-only PATH and an empty test profile, and measured 36.578 seconds from
+process launch to HTTP readiness. It verified static assets, baseline calibration,
+simulation, two-mic bearing pairs, archive clearing, invalid microphone recovery,
+and fresh webcam frames with ArcFace loaded and an empty identity catalogue.
+The independent launcher check verified Tcl 8.6.15, server spawning, LAN PIN
+authentication, graceful stop and port release. Full source suite: 122 passed.
+
+The initial Python 3.12.0 bundle hit a known CPython freezing bug. The build now
+rejects that version. The first camera run hit the startup deadline under concurrent
+test load. The isolated retry passed. Verification used the development Windows
+computer with a sanitized environment. Microphone capture with a valid device and
+operation on a separate Windows computer remain untested for this build.
+
 ## Brutalist terminal palette — 18 November 2026
 
 Applied the exact supplied palette to surfaces, text, borders, charts and status

@@ -1,49 +1,54 @@
-# Windows executable
+# Single-file Windows executable
 
-Build on Windows x64 with a full Python 3.11+ installation including Tcl/Tk (validated here on 3.12):
+Copy `dist/onefile/PULSAREX.exe` to a Windows x64 host and double-click it. The
+native launcher starts the local server and opens the dashboard in the host's
+browser. Select **LAN (same Wi-Fi)** to use a six-digit PIN with other devices.
+[Launcher instructions](gui-launcher.md).
+
+The executable bundles Python, Tcl/Tk, PortAudio, NumPy/SciPy, the dashboard and
+fonts, the ARGOS runtime, YuNet and ArcFace. Windows extracts the bundled runtime
+to a temporary folder on startup, so allow time for launch and leave space on the
+temporary drive. The isolated test reached HTTP readiness in about 37 seconds on
+the development computer. The build is unsigned.
+
+The included InsightFace weights are for non-commercial research. Consult the
+publisher's terms for redistribution or other use. [InsightFace model licensing](https://github.com/deepinsight/insightface#license).
+
+The host's settings, baselines and event archive use `%LOCALAPPDATA%\PULSAREX`.
+An external TOML or `--data-dir` can select another location. Enrollment writes
+to `%USERPROFILE%\ARGOS\data\face_templates.json`, reusing the catalogue on a host
+that already has one. The build reads an explicit list of configuration and model
+files and does not copy enrolled identities, event data, photos, or PINs.
+
+## Build and verify
+
+On the build machine, use Windows x64 and full Python 3.11 or 3.12.1+ with Tcl/Tk.
+Python 3.12.0 has a known freezing bug. [PyInstaller issue](https://github.com/pyinstaller/pyinstaller/issues/8186).
+
+Place the ARGOS source checkout with both installed models at `%USERPROFILE%\ARGOS`, or set
+`PULSAREX_ARGOS_SOURCE` to that checkout. [Model provenance](argos-models.md).
+Run `Install-PULSAR.cmd` first if the PULSAREX development environment is absent.
+Set `PULSAREX_BUILD_PYTHON` to the executable in a different build environment as needed.
 
 ```powershell
-& .\.venv\Scripts\python.exe -m pip install -e ".[packaging,discovery]"
-& .\.venv\Scripts\python.exe -m PyInstaller --noconfirm PULSAREX.spec
-& .\.venv\Scripts\python.exe examples/smoke_executable.py dist/PULSAREX/PULSAREX.exe .test-tmp/frozen-smoke
+.\Build-PULSAREX.cmd
 ```
 
-`Build-PULSAREX.cmd` performs the install/build. Distribute the **entire**
-`dist/PULSAREX` folder, including `_internal`, as a ZIP. `PULSAREX.exe` hosts HTTP;
-it is not an HTML launcher requiring a separately installed Python. A one-folder
-distribution was selected for inspectable DLL dependencies and to avoid repeated
-one-file extraction of NumPy/SciPy and PortAudio. Double-click `PULSAREX.exe` to open the native GUI. `PULSAREX-Console.exe` displays console startup/errors and supports Ctrl+C. Both share the bundled dependencies. See [GUI launch steps](gui-launcher.md).
+The script installs build dependencies and runs `PULSAREX-OneFile.spec` in the
+project environment. `PULSAREX.spec` remains the earlier folder build used by CI.
+The same entry point calls `multiprocessing.freeze_support()` for camera, audio
+and launcher child processes.
+
+For a standalone smoke test, copy only the EXE to a separate folder. Run the
+test from the build environment with the copied executable as its target.
 
 ```powershell
-.\PULSAREX.exe --open-browser
-.\PULSAREX.exe --config C:\PULSAREX\config.toml
-.\PULSAREX.exe --source simulation --port 8765 --data-dir C:\PULSAREX\data
+& .\.venv-gui\Scripts\python.exe examples/smoke_executable.py dist/onefile/PULSAREX.exe .test-tmp/onefile-smoke --onefile
 ```
 
-Without external configuration, packaged data default to `%LOCALAPPDATA%\PULSAREX`.
-`--data-dir` overrides that location. Relative data paths in external TOML resolve
-against the configuration file, not a bundle extraction directory. Dashboard assets
-are read-only package data. LAN PINs stay in GUI memory; console mode uses the PULSAR_PIN environment variable. The GUI never writes the PIN to preferences.
-
-The entry calls `multiprocessing.freeze_support()` before loading the application,
-so spawned microphone-driver workers dispatch correctly rather than starting another
-server. PyInstaller's sounddevice hook bundles PortAudio. The smoke test sanitizes
-PATH/PYTHONPATH/PYTHONHOME/VIRTUAL_ENV, changes the working directory, verifies HTTP,
-automatic baseline calibration, static assets, freeze/pause controls, invalid-device
-native worker handling and simulation recovery. It never opens a valid microphone.
-
-Observed distribution size/startup results are in [validation](validation.md).
-Nuitka was considered as an alternative compiled distribution, but has not been
-built or benchmarked here; no comparative speed claim is made. Compilation does not
-improve NumPy/SciPy algorithms automatically. Revisit Nuitka if startup/size becomes
-an operational constraint, using the same smoke test and clean-machine measurements.
-
-This is an unsigned application build. A separate clean Windows machine, Windows
-microphone permission/driver combinations and real array hardware still need testing.
-Signing and installer creation are outside this local build. GitHub Actions includes
-an independent Windows build/smoke job, but that hosted workflow has not run here.
-
-References: [PyInstaller runtime paths](https://pyinstaller.org/en/stable/runtime-information.html),
-[multiprocessing support](https://pyinstaller.org/en/stable/common-issues-and-pitfalls.html#multi-processing).
-
-A packaged GUI-backend check is available as `PULSAREX.exe --check-launcher <output.json>`. It verifies bundled Tcl, frozen server-process spawning, authenticated LAN access and graceful shutdown/port release, without physical audio capture. The result file contains no token.
+The smoke test sets a clean Windows PATH and an empty user profile for the child
+process. It checks assets, calibration, synthetic two-mic bearings, archive clearing
+and recovery from an invalid microphone. `--camera 0` also tests the local webcam
+and starts both bundled models with an empty catalogue. `PULSAREX.exe
+--check-launcher <output.json>` verifies Tcl, PIN authentication, frozen server
+spawning and orderly shutdown. [Validation results](validation.md).

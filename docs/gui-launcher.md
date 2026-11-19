@@ -1,14 +1,13 @@
-# GUI launcher — current source application
+# GUI launcher
 
-For the **0.5.0 combined ARGOS dashboard**, use the source `Start-PULSAR.cmd` launcher.
-After opening the dashboard, use ARGOS → Start ARGOS camera. Enrollment and camera
-viewing live in that menu; face vectors remain on Monitor's acoustic PPI. The existing packaged EXE
-predates this integration; rebuilding is deferred. See [ARGOS instructions](argos-integration.md).
+The single-file Windows build includes Python and the ARGOS runtime. After opening
+the dashboard, use ARGOS → Start ARGOS camera for video and enrollment. Monitor's
+acoustic PPI displays face vectors. [ARGOS instructions](argos-integration.md).
 
 No PowerShell commands are needed for normal Windows operation.
 
-1. Use the current source folder. Run `Install-PULSAR.cmd` once on a new setup.
-2. Double-click **Start-PULSAR.cmd**. The native launcher opens without a terminal.
+1. Copy `dist/onefile/PULSAREX.exe` to the Windows x64 host.
+2. Double-click **PULSAREX.exe**. The native launcher opens without a terminal.
 3. Choose **LAN (same Wi-Fi)** to allow authorized browsers on your local network,
    or **Local only** for this computer.
 4. Keep the generated six-digit access PIN or enter your own six digits (0-9). **Generate PIN**
@@ -66,14 +65,9 @@ This development workspace also has an isolated `.venv-gui` environment because 
 original bundled Python lacks compatible Tcl/Tk assets. The script prefers that
 environment when present; ordinary installations use `.venv`.
 
-The package retains **PULSAREX-Console.exe** for advanced command-line use. The
-existing Python command `python -m pulsar.main` is unchanged. `PULSAREX.exe` with
-explicit server arguments remains available for automated headless checks, while
-double-clicking it without arguments opens the GUI.
-
-Build using `Build-PULSAREX.cmd`. PyInstaller bundles Tk, Tcl, PortAudio, dashboard
-assets and dependencies; end users do not need Python installed. The GUI and console
-executables share their `_internal` directory, which must stay with them.
+The existing Python command `python -m pulsar.main` remains available for source
+operation. `PULSAREX.exe` accepts explicit server arguments for automated headless
+checks. Build the one-file executable using `Build-PULSAREX.cmd`.
 
 References: [Tk's event/thread model](https://docs.python.org/3/library/tkinter.html#threading-model),
 [PyInstaller multiprocessing and windowed streams](https://pyinstaller.org/en/stable/common-issues-and-pitfalls.html).

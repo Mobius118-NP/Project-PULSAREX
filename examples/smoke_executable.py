@@ -1,23 +1,33 @@
 """Verify a frozen server with a sanitized environment and no physical audio capture."""
+import argparse
 import json
 import os
 import socket
 import subprocess
-import sys
 import time
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from urllib.request import Request, urlopen
 
 
-def smoke(executable, directory):
+def smoke(executable, directory, *, onefile=False, camera=None):
     executable = Path(executable).resolve()
     directory = Path(directory).resolve()
     directory.mkdir(parents=True, exist_ok=True)
     with socket.socket() as reservation:
         reservation.bind(('127.0.0.1', 0))
         port = reservation.getsockname()[1]
-    environment = {k: v for k, v in os.environ.items() if k.upper() not in ('PYTHONPATH', 'PYTHONHOME', 'VIRTUAL_ENV')}
+    environment = {k: v for k, v in os.environ.items() if k.upper() not in (
+        'PYTHONPATH', 'PYTHONHOME', 'VIRTUAL_ENV', 'PULSAR_PIN', 'PULSAR_TOKEN', 'TCL_LIBRARY', 'TK_LIBRARY',
+    )}
     environment['PATH'] = str(Path(os.environ['SystemRoot'])/'System32')
+    extraction = None
+    if onefile:
+        profile = directory/'empty-profile'
+        profile.mkdir(exist_ok=True)
+        extraction = TemporaryDirectory(prefix='pulsarex-smoke-')
+        environment.update(USERPROFILE=str(profile), LOCALAPPDATA=str(profile/'AppData/Local'),
+                           TEMP=extraction.name, TMP=extraction.name)
     base = f'http://127.0.0.1:{port}'
     def request(path, method='GET', payload=None):
         data = json.dumps(payload).encode() if payload is not None else (b'' if method == 'POST' else None)
@@ -26,6 +36,7 @@ def smoke(executable, directory):
             body = response.read()
             return json.loads(body) if response.headers.get_content_type() == 'application/json' else body
     started = time.monotonic()
+    startup_timeout = 240 if onefile else 60
     with (directory/'server.log').open('w', encoding='utf-8') as log:
         process = subprocess.Popen([str(executable), '--port', str(port), '--data-dir', str(directory/'data')],
                                    cwd=directory, env=environment, stdout=log, stderr=log,
@@ -38,12 +49,17 @@ def smoke(executable, directory):
                     status = request('/api/v1/status')
                     break
                 except OSError:
-                    if time.monotonic()-started > 30:
-                        raise TimeoutError('Packaged server startup exceeded 30 seconds') from None
+                    if time.monotonic()-started > startup_timeout:
+                        raise TimeoutError(f'Packaged server startup exceeded {startup_timeout} seconds') from None
                     time.sleep(.1)
             startup_seconds = time.monotonic()-started
             assert b'Acoustic spectrum' in request('/')
             assert b'renderResearch' in request('/research.js')
+            if onefile:
+                assert b'--chassis-black' in request('/terminal.css')
+                assert request('/fonts/IBMPlexSans.ttf').startswith(b'\x00\x01\x00\x00')
+                assert request('/fonts/IBMPlexMono-Regular.ttf').startswith(b'\x00\x01\x00\x00')
+                assert Path(request('/api/v1/vision')['default_root']) == profile/'ARGOS'
             deadline = time.monotonic()+12
             while not request('/api/v1/baseline')['ready']:
                 if time.monotonic() > deadline:
@@ -85,15 +101,52 @@ def smoke(executable, directory):
                     raise TimeoutError('Recovery to simulation failed')
                 time.sleep(.1)
             request('/api/v1/capture/stop', 'POST')
+            before = request('/api/v1/events')['total']
+            cleared = request('/api/v1/events', 'DELETE', {'confirm': True})
+            assert cleared['deleted'] >= before and request('/api/v1/events')['total'] == 0
+            if camera is not None:
+                request('/api/v1/vision/start', 'POST', {'camera': camera, 'identity': True})
+                try:
+                    deadline = time.monotonic()+40
+                    while time.monotonic() < deadline:
+                        vision = request('/api/v1/vision')
+                        if vision['error']:
+                            raise RuntimeError(vision['error'])
+                        if not vision['stale']:
+                            break
+                        time.sleep(.2)
+                    else:
+                        raise TimeoutError('ARGOS camera did not publish a fresh frame')
+                    assert vision['identity_status'].startswith('Recognition ready')
+                    assert request('/api/v1/vision/frame')['jpeg_base64']
+                    assert request('/api/v1/vision/catalogue')['identities'] == []
+                finally:
+                    assert not request('/api/v1/vision/stop', 'POST')['running']
             return {'startup_seconds': round(startup_seconds, 3), 'outside_venv': True,
                     'auto_calibration': True, 'static_dashboard': True, 'pause_resume': True,
                     'frozen_microphone_worker_error_recovery': True, 'two_microphone_pair': True,
+                    'archive_clear': True, 'packaged_fonts': onefile,
+                    'argos_camera_with_recognition_loaded': camera is not None,
                     'server_id': status['server_id'],
-                    'distribution_bytes': sum(p.stat().st_size for p in executable.parent.rglob('*') if p.is_file())}
+                    'distribution_bytes': executable.stat().st_size if onefile else
+                    sum(p.stat().st_size for p in executable.parent.rglob('*') if p.is_file())}
         finally:
-            process.terminate()
+            if onefile and process.poll() is None:
+                # The one-file bootloader has a separate application process.
+                subprocess.run([str(Path(environment['PATH'])/'taskkill.exe'), '/T', '/F', '/PID', str(process.pid)],
+                               capture_output=True, timeout=10)
+            if process.poll() is None:
+                process.terminate()
             process.wait(timeout=10)
+            if extraction:
+                extraction.cleanup()
 
 
 if __name__ == '__main__':
-    print(json.dumps(smoke(sys.argv[1], sys.argv[2]), indent=2))
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('executable')
+    parser.add_argument('directory')
+    parser.add_argument('--onefile', action='store_true')
+    parser.add_argument('--camera', type=int, help='Optional consent-based test of a local camera index')
+    args = parser.parse_args()
+    print(json.dumps(smoke(args.executable, args.directory, onefile=args.onefile, camera=args.camera), indent=2))

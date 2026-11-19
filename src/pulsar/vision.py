@@ -56,6 +56,14 @@ def _latest_put(queue, item):
             pass
 
 
+def bundled_argos_assets():
+    if getattr(sys, 'frozen', False):
+        assets = Path(__file__).with_name('argos_assets')
+        if (assets/'config/default.yaml').is_file():
+            return assets
+    return None
+
+
 def camera_worker(root, camera, heading, identity_enabled, packets, commands, stopped):
     """Native camera/model calls are isolated from HTTP/audio and can be terminated."""
     capture = worker = None
@@ -63,14 +71,17 @@ def camera_worker(root, camera, heading, identity_enabled, packets, commands, st
         import cv2
         import yaml
         cv2.setNumThreads(1)
-        sys.path.insert(0, str(Path(root)/'src'))
+        root = Path(root)
+        assets = bundled_argos_assets()
+        if assets is None:
+            sys.path.insert(0, str(root/'src'))
+            assets = root
         from argos.camera import SingleCamera
         from argos.detection.yunet import YuNetFaceDetector
         from argos.tracking import CentroidTracker
-        root = Path(root)
-        cfg = yaml.safe_load((root/'config/default.yaml').read_text(encoding='utf-8'))
+        cfg = yaml.safe_load((assets/'config/default.yaml').read_text(encoding='utf-8'))
         detection, tracking = cfg['detection'], cfg['tracking']
-        model = root/detection['model_path']
+        model = assets/detection['model_path']
         if not model.is_file():
             raise RuntimeError(f'ARGOS YuNet weights missing: {model}. Install weights using ARGOS setup first.')
         detector = YuNetFaceDetector(model, detection.get('score_threshold', .8),
@@ -81,7 +92,8 @@ def camera_worker(root, camera, heading, identity_enabled, packets, commands, st
         identity = cfg.get('identity', {})
         identity_status = 'disabled'
         if identity_enabled:
-            weights, templates = root/identity.get('model_path', 'models/w600k_r50.onnx'), root/identity.get('templates_path', 'data/face_templates.json')
+            weights = assets/identity.get('model_path', 'models/w600k_r50.onnx')
+            templates = root/identity.get('templates_path', 'data/face_templates.json')
             if weights.is_file():
                 from argos.identity.arcface import ArcFaceRecognizer
                 from argos.identity.worker import EmbeddingWorker
@@ -218,7 +230,7 @@ class VisionService:
         with self.lock:
             if self.process is not None:
                 raise ValueError('Stop ARGOS before changing camera settings')
-            if not (Path(root)/'src/argos').is_dir():
+            if bundled_argos_assets() is None and not (Path(root)/'src/argos').is_dir():
                 raise ValueError('Select the existing ARGOS project folder')
             if type(camera) is not int or not 0 <= camera <= 32 or not math.isfinite(heading) or not 0 <= heading < 360:
                 raise ValueError('Invalid camera index or heading')

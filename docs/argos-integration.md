@@ -31,8 +31,10 @@ This workspace has the vision dependencies installed in `.venv-gui`, which the
 source launcher prefers. For a new setup, install a full Python 3.11+ with Tk,
 run `Install-PULSAR.cmd`, and place the existing ARGOS checkout at `%USERPROFILE%\ARGOS`.
 The equivalent dependency command is `python -m pip install -e ".[dev,vision]"`.
-ARGOS code and its model weights are external local prerequisites, not copied into
-the PULSAR package. Do not use the earlier EXE for these new features; repackaging is deferred.
+The one-file Windows build includes the ARGOS runtime, default settings, YuNet and
+ArcFace. On the host, ARGOS writes enrolled encodings to
+`%USERPROFILE%\ARGOS\data\face_templates.json`. A fresh host starts with an empty
+catalogue. [Windows build details](packaging.md).
 
 ## Detection and identity prerequisites
 

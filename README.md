@@ -26,12 +26,10 @@ See the [feature matrix and limitations](docs/features.md),
 
 ## Start on Windows
 
-**Current combined source application:** double-click **Start-PULSAR.cmd**. The
-existing native launcher starts the combined server. Choose **LAN (same Wi-Fi)**,
-click **Start server**, then **Open dashboard**. Open **ARGOS → Start ARGOS camera**.
-Source setup uses the local `ARGOS` folder in your Windows user folder. Recognition
-weights are installed on this host; see [model details](docs/argos-models.md).
-The existing executable releases predate this integration; a new EXE is deferred.
+Double-click **PULSAREX.exe** from `dist/onefile` for the bundled Windows x64 app.
+Python, Tcl/Tk, the dashboard, the ARGOS runtime and both models are included. For
+source development, use **Start-PULSAR.cmd** and a local ARGOS checkout. The bundled
+InsightFace model is for non-commercial research. [Windows build details](docs/packaging.md).
 
 The native GUI opens without a terminal. Choose **LAN (same Wi-Fi)**, keep or generate
 a six-digit PIN, then click **Start server**. Use **Copy LAN link** on another device
@@ -209,9 +207,9 @@ and Windows and builds/smoke-tests the Windows package when run on GitHub.
 
 ## Standalone Windows application
 
-Build with `Build-PULSAREX.cmd`, then distribute the entire `dist/PULSAREX` folder.
-Double-click `PULSAREX.exe`, choose Local or LAN, then Start. `PULSAREX-Console.exe` retains command-line operation.
-The executable serves HTTP itself and does not need an installed Python interpreter.
+Build with `Build-PULSAREX.cmd`. The output is `dist/onefile/PULSAREX.exe`.
+Copy this file to the Windows x64 host, double-click it, choose Local or LAN and
+click **Start server**. The executable serves HTTP with its bundled Python runtime.
 Packaged data default to `%LOCALAPPDATA%\PULSAREX`; `--data-dir` or external TOML
 overrides it. Source launches retain the `data/` default. Browser changes are runtime
 settings; put desired restart settings in external TOML:
